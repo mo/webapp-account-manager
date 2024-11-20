@@ -1,0 +1,23 @@
+{
+  "tasks": {
+    "update-tokens-example": "deno run update-tokens example.webapps.json"
+  },
+  "lint": {
+    "rules": {
+      "include": [
+        "no-console",
+        "no-undef"
+      ]
+    }
+  },
+  "fmt": {
+    "semiColons": false,
+    "singleQuote": true
+  },
+  "imports": {
+    "commander": "npm:commander@^12.1.0",
+    "cookie": "npm:cookie@^1.0.2",
+    "dayjs": "npm:dayjs@^1.11.13",
+    "playwright": "npm:playwright@^1.49.0"
+  }
+}

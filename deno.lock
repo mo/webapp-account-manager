@@ -1,0 +1,41 @@
+{
+  "version": "4",
+  "specifiers": {
+    "npm:commander@^12.1.0": "12.1.0",
+    "npm:cookie@^1.0.2": "1.0.2",
+    "npm:dayjs@^1.11.13": "1.11.13",
+    "npm:playwright@^1.49.0": "1.49.0"
+  },
+  "npm": {
+    "commander@12.1.0": {
+      "integrity": "sha512-Vw8qHK3bZM9y/P10u3Vib8o/DdkvA2OtPtZvD871QKjy74Wj1WSKFILMPRPSdUSx5RFK1arlJzEtA4PkFgnbuA=="
+    },
+    "cookie@1.0.2": {
+      "integrity": "sha512-9Kr/j4O16ISv8zBBhJoi4bXOYNTkFLOqSL3UDB0njXxCXNezjeyVrJyGOWtgfs/q2km1gwBcfH8q1yEGoMYunA=="
+    },
+    "dayjs@1.11.13": {
+      "integrity": "sha512-oaMBel6gjolK862uaPQOVTA7q3TZhuSvuMQAAglQDOWYO9A91IrAOUJEyKVlqJlHE0vq5p5UXxzdPfMH/x6xNg=="
+    },
+    "fsevents@2.3.2": {
+      "integrity": "sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA=="
+    },
+    "playwright-core@1.49.0": {
+      "integrity": "sha512-R+3KKTQF3npy5GTiKH/T+kdhoJfJojjHESR1YEWhYuEKRVfVaxH3+4+GvXE5xyCngCxhxnykk0Vlah9v8fs3jA=="
+    },
+    "playwright@1.49.0": {
+      "integrity": "sha512-eKpmys0UFDnfNb3vfsf8Vx2LEOtflgRebl0Im2eQQnYMA4Aqd+Zw8bEOB+7ZKvN76901mRnqdsiOGKxzVTbi7A==",
+      "dependencies": [
+        "fsevents",
+        "playwright-core"
+      ]
+    }
+  },
+  "workspace": {
+    "dependencies": [
+      "npm:commander@^12.1.0",
+      "npm:cookie@^1.0.2",
+      "npm:dayjs@^1.11.13",
+      "npm:playwright@^1.49.0"
+    ]
+  }
+}
