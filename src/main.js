@@ -4,6 +4,7 @@ import path from 'node:path'
 import { Option, program } from 'commander'
 import { chromium } from 'playwright'
 import cookie from 'cookie'
+import jwt from 'jsonwebtoken'
 
 import dayjs from './dayjs.js'
 import { consoleError, consoleLog } from './console.js'
@@ -12,14 +13,35 @@ const parseCookie = (setCookieValue) => {
     const cookieParts = setCookieValue.split(';')
     const cookieName = cookieParts[0].split('=')[0]
     const parsedCookie = cookie.parse(setCookieValue)
-    const expires = dayjs(parsedCookie.expires)
+    let expires
+    if (parsedCookie.maxAge) {
+        expires = dayjs().add(parsedCookie.maxAge, 'seconds')
+    } else if (parsedCookie.expires) {
+        expires = dayjs(parsedCookie.expires)
+    }
     return {
         type: 'cookie',
         name: cookieName,
         value: parsedCookie[cookieName],
-        expires: expires.utc().format(),
+        expires: expires ? expires.utc().format() : undefined,
         raw: setCookieValue,
     }
+}
+
+const tryDecodeJWT = (maybeJwt) => {
+    try {
+        return jwt.decode(maybeJwt)
+    } catch {
+        return false
+    }
+}
+
+const getExpirationTime = (token) => {
+    const decodedJwt = tryDecodeJWT(token)
+    if (decodedJwt) {
+        return dayjs.unix(decodedJwt.exp).utc().format()
+    }
+    throw Error('not implemented yet')
 }
 
 const waitUntilFoundAllSessionCredentials = (
@@ -39,7 +61,7 @@ const waitUntilFoundAllSessionCredentials = (
                 clearInterval(intervalId)
                 resolve()
             } else if (debug) {
-                consoleLog(`Still havn't found what i'm looking for:`)
+                consoleLog(`Still havn't found, what i'm looking for:`)
             }
             if (debug) {
                 consoleLog(
@@ -66,6 +88,14 @@ const waitUntilFoundAllSessionCredentials = (
 
 const hasSessionCredentialsDefined = (app) =>
     app.sessionCredentials && app.sessionCredentials.length > 0
+
+const shortenString = (str) => {
+    if (str.length > 23) {
+        return str.slice(0, 10) + '...' + str.slice(-10)
+    } else {
+        return str
+    }
+}
 
 const executeSteps = async (options, app, account, playwrightFunction) => {
     const browser = await chromium.launch({
@@ -106,19 +136,23 @@ const executeSteps = async (options, app, account, playwrightFunction) => {
                         )
                         if (headerEntry.name === 'authorization') {
                             const subtype = headerEntry.value.split(' ')[0]
+                            const token = headerEntry.value.slice(
+                                subtype.length + 1,
+                            )
                             const authHeader = {
                                 type: 'authorization',
                                 subtype,
-                                value: headerEntry.value.slice(
-                                    subtype.length + 1,
-                                ),
+                                value: token,
+                                expires: getExpirationTime(token),
                             }
                             if (
                                 !hasSessionCredentialsDefined(app) ||
                                 isSessionCredential(app, authHeader)
                             ) {
                                 consoleLog(
-                                    `Saving authorization ${authHeader.subtype} header: ${authHeader.value}`,
+                                    `Saving authorization ${authHeader.subtype} ${
+                                        shortenString(authHeader.value)
+                                    }`,
                                 )
                                 interceptedCookiesAndTokens.push(authHeader)
                             } else if (options.debug) {
@@ -147,6 +181,30 @@ const executeSteps = async (options, app, account, playwrightFunction) => {
                         `${headerEntry.name}: ${headerEntry.value}`,
                     )
                     const cookie = parseCookie(headerEntry.value)
+                    if (!cookie.expires) {
+                        // For auth session cookies (cookies that makes you logged in) that
+                        // are browser session cookies (no expiration, deleted when browser closes)
+                        // we support the ability to set a specific cookie maxAge via the sessionCredential
+                        // specification because we might know that the server treats these cookies as
+                        // valid for X days even though it sends them to the client as browser session cookies.
+                        const sessionCredMaxAge = app.sessionCredentials?.find(
+                            (cred) =>
+                                cred.type === 'cookie' &&
+                                cred.name === cookie.name,
+                        )?.maxAge
+                        if (sessionCredMaxAge) {
+                            cookie.expires = dayjs().add(
+                                sessionCredMaxAge,
+                                'seconds',
+                            ).utc().format()
+                        } else {
+                            // If we literally have no idea how long the cookie is valid, then assume it's valid for at least 24h
+                            cookie.expires = dayjs().add(
+                                24 * 60 * 60,
+                                'seconds',
+                            ).utc().format()
+                        }
+                    }
                     if (
                         !hasSessionCredentialsDefined(app) ||
                         isSessionCredential(app, cookie)
@@ -200,15 +258,25 @@ const updateToken = async (options, app, account, tokensJsonObj) => {
     tokensJsonAccountEntry.cookiesAndTokens = interceptedCookiesAndTokens
 }
 
-const tokenIsValid = (app, account, tokensJsonObj) => {
-    const tokenAccountEntry = tokensJsonObj.find((tokenAppInfo) =>
-        tokenAppInfo.appid === app.appid
-    )?.accounts
-        ?.find((tokenAccountEntry) =>
-            tokenAccountEntry.userid === account.userid
-        )
-    return tokenAccountEntry &&
-        dayjs(tokenAccountEntry.expires).isAfter(dayjs())
+const isValid = (credential) => {
+    return dayjs(credential.expires).isAfter(dayjs())
+}
+
+const allCredentialsForAccountAreValid = (app, account, tokensJsonObj) => {
+    const cookiesAndTokens =
+        tokensJsonObj.find((tokenAppInfo) => tokenAppInfo.appid === app.appid)
+            ?.accounts
+            ?.find((tokenAccountEntry) =>
+                tokenAccountEntry.userid === account.userid
+            ).cookiesAndTokens || []
+
+    if (hasSessionCredentialsDefined(app)) {
+        return cookiesAndTokens.filter((cookieOrToken) =>
+            isSessionCredential(app, cookieOrToken)
+        ).every(isValid)
+    } else {
+        return cookiesAndTokens.every(isValid)
+    }
 }
 
 const loadConfig = async () => {
@@ -235,23 +303,38 @@ const loadConfig = async () => {
     return { webappsJsonObj, tokensJsonObj, tokensJsonFilename }
 }
 
-const cmdRefresh = async (options) => {
+const cmdRefresh = async (appid, userid, options) => {
     const config = await loadConfig()
     for (const app of config.webappsJsonObj) {
-        for (const account of app.accounts) {
-            consoleLog(`checking ${app.appid} ${account.userid}`)
-            if (!tokenIsValid(app, account, config.tokensJsonObj)) {
-                await updateToken(options, app, account, config.tokensJsonObj)
-                // Reorder "tokensJsonObj" to same order used in webapps.js file
-                config.tokensJsonObj = config.webappsJsonObj.map((app) =>
-                    config.tokensJsonObj.find((tokenAppInfo) =>
-                        tokenAppInfo.appid === app.appid
-                    )
-                )
-                fs.writeFileSync(
-                    config.tokensJsonFilename,
-                    JSON.stringify(config.tokensJsonObj, null, 4),
-                )
+        if (!appid || app.appid === appid) {
+            for (const account of app.accounts) {
+                if (!userid || account.userid === userid) {
+                    consoleLog(`checking ${app.appid} ${account.userid}`)
+                    if (
+                        options.force || !allCredentialsForAccountAreValid(
+                            app,
+                            account,
+                            config.tokensJsonObj,
+                        )
+                    ) {
+                        await updateToken(
+                            options,
+                            app,
+                            account,
+                            config.tokensJsonObj,
+                        )
+                        // Reorder "tokensJsonObj" to same order used in webapps.js file
+                        config.tokensJsonObj = config.webappsJsonObj.map((
+                            app,
+                        ) => config.tokensJsonObj.find((
+                            tokenAppInfo,
+                        ) => tokenAppInfo.appid === app.appid)).filter(Boolean)
+                        fs.writeFileSync(
+                            config.tokensJsonFilename,
+                            JSON.stringify(config.tokensJsonObj, null, 4),
+                        )
+                    }
+                }
             }
         }
     }
@@ -317,11 +400,14 @@ program.hook('preAction', () => {
 })
 
 program
-    .command('refresh').description(
+    .command('refresh [appid] [userid]').description(
         'ensure all accounts are created and logged in',
     ).option(
         '--debug',
         'show browser while updating tokens and run steps slowly',
+    ).option(
+        '-f, --force',
+        'refresh cookies/tokens even if they have not expired yet',
     )
     .action(cmdRefresh)
 
