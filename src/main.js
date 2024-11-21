@@ -38,10 +38,12 @@ const waitUntilFoundAllSessionCredentials = (
             ) {
                 clearInterval(intervalId)
                 resolve()
+            } else if (debug) {
+                consoleLog(`Still havn't found what i'm looking for:`)
             }
             if (debug) {
                 consoleLog(
-                    `\nStill havn't found what i'm looking for:\n${
+                    `${
                         app.sessionCredentials.map((sessionCred) =>
                             `${
                                 interceptedCookiesAndTokens.some((
@@ -54,7 +56,7 @@ const waitUntilFoundAllSessionCredentials = (
                                     ? '✅ Found        '
                                     : '❓ Not Found Yet'
                             } ---> ${JSON.stringify(sessionCred)}`
-                        ).join('\n')
+                        ).join('\n') + '\n\n'
                     }`,
                 )
             }
