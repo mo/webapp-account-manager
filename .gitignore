@@ -4,3 +4,6 @@ example.tokens.json
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+*.webapps.js
+*.tokens.json
