@@ -1,5 +1,5 @@
 import process from 'node:process'
-import fs from 'node:fs'
+import fs from 'node:fs/promises'
 import path from 'node:path'
 import { Option, program } from 'commander'
 import { chromium } from 'playwright'
@@ -235,7 +235,12 @@ const executeSteps = async (options, app, account, playwrightFunction) => {
   return interceptedCookiesAndTokens
 }
 
-const updateToken = async (options, app, account, tokensJsonObj) => {
+const loginWithAccountAndGetFreshCredentials = async (
+  options,
+  app,
+  account,
+  tokensJsonObj,
+) => {
   const interceptedCookiesAndTokens = await executeSteps(
     options,
     app,
@@ -289,8 +294,8 @@ const loadConfig = async () => {
     path.resolve(process.cwd(), webappsJsFilename)
   )).default
   let tokensJsonObj
-  if (fs.existsSync(tokensJsonFilename)) {
-    tokensJsonObj = JSON.parse(fs.readFileSync(tokensJsonFilename))
+  if (await fs.access(tokensJsonFilename)) {
+    tokensJsonObj = JSON.parse(await fs.readFile(tokensJsonFilename))
     if (!Array.isArray(tokensJsonObj)) {
       throw Error(
         `${tokensJsonFilename} must be a json file containing a list at the top level`,
@@ -317,25 +322,70 @@ const cmdRefresh = async (appid, userid, options) => {
               config.tokensJsonObj,
             )
           ) {
-            await updateToken(
+            await loginWithAccountAndGetFreshCredentials(
               options,
               app,
               account,
               config.tokensJsonObj,
             )
-            // Reorder "tokensJsonObj" to same order used in webapps.js file
-            config.tokensJsonObj = config.webappsJsonObj.map((
-              app,
-            ) =>
-              config.tokensJsonObj.find((
-                tokenAppInfo,
-              ) => tokenAppInfo.appid === app.appid)
-            ).filter(Boolean)
-            fs.writeFileSync(
-              config.tokensJsonFilename,
-              JSON.stringify(config.tokensJsonObj, null, 4),
-            )
+            await saveTokensJsonToDisk(config)
           }
+        }
+      }
+    }
+  }
+}
+
+const registerAccount = async (
+  options,
+  app,
+  account,
+) => {
+  await executeSteps(
+    options,
+    app,
+    account,
+    app.register,
+  )
+}
+
+const saveTokensJsonToDisk = async (config) => {
+  // Reorder "tokensJsonObj" to same order used in webapps.js file
+  config.tokensJsonObj = config.webappsJsonObj.map((
+    app,
+  ) =>
+    config.tokensJsonObj.find((
+      tokenAppInfo,
+    ) => tokenAppInfo.appid === app.appid)
+  ).filter(Boolean)
+  await fs.writeFile(
+    config.tokensJsonFilename,
+    JSON.stringify(config.tokensJsonObj, null, 4),
+  )
+}
+
+const cmdRegister = async (appid, userid, options) => {
+  const config = await loadConfig()
+  for (const app of config.webappsJsonObj) {
+    if (!appid || app.appid === appid) {
+      for (const account of app.accounts) {
+        if (!userid || account.userid === userid) {
+          consoleLog(`registering ${app.appid} ${account.userid}`)
+          await registerAccount(
+            options,
+            app,
+            account,
+          )
+          consoleLog(
+            `registration steps for account ${userid} on webapp ${appid} are done completed, will now verify that new userid/passwd actually works`,
+          )
+          await loginWithAccountAndGetFreshCredentials(
+            options,
+            app,
+            account,
+            config.tokensJsonObj,
+          )
+          await saveTokensJsonToDisk(config)
         }
       }
     }
@@ -391,7 +441,7 @@ program
   )
 
 program.hook('preAction', () => {
-  if (!fs.existsSync(program.opts().config)) {
+  if (!fs.access(program.opts().config)) {
     consoleError(
       `error: config file "${program.opts().config}" does not exist`,
     )
@@ -404,7 +454,7 @@ program
     'ensure all accounts are created and logged in',
   ).option(
     '--debug',
-    'show browser while updating tokens and run steps slowly',
+    'show browser while updating tokens',
   ).option(
     '-f, --force',
     'refresh cookies/tokens even if they have not expired yet',
@@ -426,5 +476,14 @@ program
     ).default('simple').choices(['simple']),
   )
   .action(cmdGet)
+
+program
+  .command('register [appid] [userid]').description(
+    'register specified accounts (useful for re-creating accounts in test systems that delete all accounts periodically)',
+  ).option(
+    '--debug',
+    'show browser while registering users',
+  )
+  .action(cmdRegister)
 
 await program.parseAsync(process.argv)
