@@ -1,6 +1,6 @@
 {
   "tasks": {
-    "update-tokens-example": "deno run update-tokens example.webapps.json"
+    "test": "./wam -c example.webapps.js refresh --force --debug"
   },
   "lint": {
     "rules": {
