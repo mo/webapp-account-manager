@@ -323,7 +323,9 @@ const cmdRefresh = async (appid, userid, options) => {
     if (!appid || app.appid === appid) {
       for (const account of app.accounts) {
         if (!userid || account.userid === userid) {
-          consoleLog(`checking ${app.appid} ${account.userid}`)
+          if (options.debug) {
+            consoleLog(`checking ${app.appid} ${account.userid}`)
+          }
           if (
             options.force || !allCredentialsForAccountAreValid(
               app,
