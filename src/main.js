@@ -1,10 +1,12 @@
 import process from 'node:process'
-import fs from 'node:fs/promises'
+import fs from 'node:fs'
+import fsPromises from 'node:fs/promises'
 import path from 'node:path'
 import { Option, program } from 'commander'
 import { chromium } from 'playwright'
 import cookie from 'cookie'
 import jwt from 'jsonwebtoken'
+import Table from 'tty-table'
 
 import dayjs from './dayjs.js'
 import { consoleError, consoleLog } from './console.js'
@@ -90,9 +92,11 @@ const waitUntilFoundAllSessionCredentials = (
 const hasSessionCredentialsDefined = (app) =>
   app.sessionCredentials && app.sessionCredentials.length > 0
 
-const shortenString = (str) => {
-  if (str.length > 23) {
-    return str.slice(0, 10) + '...' + str.slice(-10)
+const shortenString = (str, maxLen = 23) => {
+  if (str.length > maxLen) {
+    const prefixSuffixLength = Math.floor((maxLen - 3) / 2)
+    return str.slice(0, prefixSuffixLength) + '...' +
+      str.slice(-1 * prefixSuffixLength)
   } else {
     return str
   }
@@ -168,57 +172,62 @@ const executeSteps = async (options, app, account, playwrightFunction) => {
       // Ignore errors thrown when context.close() is called while headersArray() is running
     }
   })
-  page.on('response', async (response) =>
-    (await response.headersArray())
-      .filter((headerEntry) =>
-        !alreadySeenHeaders.has(
-          `${headerEntry.name}: ${headerEntry.value}`,
-        )
-      )
-      .filter((headerEntry) => headerEntry.name === 'set-cookie')
-      .forEach(
-        (headerEntry) => {
-          alreadySeenHeaders.add(
+  page.on('response', async (response) => {
+    try {
+      ;(await response.headersArray())
+        .filter((headerEntry) =>
+          !alreadySeenHeaders.has(
             `${headerEntry.name}: ${headerEntry.value}`,
           )
-          const cookie = parseCookie(headerEntry.value)
-          if (!cookie.expires) {
-            // For auth session cookies (cookies that makes you logged in) that
-            // are browser session cookies (no expiration, deleted when browser closes)
-            // we support the ability to set a specific cookie maxAge via the sessionCredential
-            // specification because we might know that the server treats these cookies as
-            // valid for X days even though it sends them to the client as browser session cookies.
-            const sessionCredMaxAge = app.sessionCredentials?.find(
-              (cred) =>
-                cred.type === 'cookie' &&
-                cred.name === cookie.name,
-            )?.maxAge
-            if (sessionCredMaxAge) {
-              cookie.expires = dayjs().add(
-                sessionCredMaxAge,
-                'seconds',
-              ).utc().format()
-            } else {
-              // If we literally have no idea how long the cookie is valid, then assume it's valid for at least 24h
-              cookie.expires = dayjs().add(
-                24 * 60 * 60,
-                'seconds',
-              ).utc().format()
-            }
-          }
-          if (
-            !hasSessionCredentialsDefined(app) ||
-            isSessionCredential(app, cookie)
-          ) {
-            consoleLog('Saving cookie: ' + cookie.name)
-            interceptedCookiesAndTokens.push(cookie)
-          } else if (options.debug) {
-            consoleLog(
-              `Ignoring cookie not marked as session credential: ${cookie.name}`,
+        )
+        .filter((headerEntry) => headerEntry.name === 'set-cookie')
+        .forEach(
+          (headerEntry) => {
+            alreadySeenHeaders.add(
+              `${headerEntry.name}: ${headerEntry.value}`,
             )
-          }
-        },
-      ))
+            const cookie = parseCookie(headerEntry.value)
+            if (!cookie.expires) {
+              // For auth session cookies (cookies that makes you logged in) that
+              // are browser session cookies (no expiration, deleted when browser closes)
+              // we support the ability to set a specific cookie maxAge via the sessionCredential
+              // specification because we might know that the server treats these cookies as
+              // valid for X days even though it sends them to the client as browser session cookies.
+              const sessionCredMaxAge = app.sessionCredentials?.find(
+                (cred) =>
+                  cred.type === 'cookie' &&
+                  cred.name === cookie.name,
+              )?.maxAge
+              if (sessionCredMaxAge) {
+                cookie.expires = dayjs().add(
+                  sessionCredMaxAge,
+                  'seconds',
+                ).utc().format()
+              } else {
+                // If we literally have no idea how long the cookie is valid, then assume it's valid for at least 24h
+                cookie.expires = dayjs().add(
+                  24 * 60 * 60,
+                  'seconds',
+                ).utc().format()
+              }
+            }
+            if (
+              !hasSessionCredentialsDefined(app) ||
+              isSessionCredential(app, cookie)
+            ) {
+              consoleLog('Saving cookie: ' + cookie.name)
+              interceptedCookiesAndTokens.push(cookie)
+            } else if (options.debug) {
+              consoleLog(
+                `Ignoring cookie not marked as session credential: ${cookie.name}`,
+              )
+            }
+          },
+        )
+    } catch {
+      // Ignore errors thrown when context.close() is called while headersArray() is running
+    }
+  })
 
   await playwrightFunction(page, account.userid, account.passwd)
   await waitUntilFoundAllSessionCredentials(
@@ -294,8 +303,8 @@ const loadConfig = async () => {
     path.resolve(process.cwd(), webappsJsFilename)
   )).default
   let tokensJsonObj
-  if (await fs.access(tokensJsonFilename)) {
-    tokensJsonObj = JSON.parse(await fs.readFile(tokensJsonFilename))
+  if (fs.existsSync(tokensJsonFilename)) {
+    tokensJsonObj = JSON.parse(await fsPromises.readFile(tokensJsonFilename))
     if (!Array.isArray(tokensJsonObj)) {
       throw Error(
         `${tokensJsonFilename} must be a json file containing a list at the top level`,
@@ -358,7 +367,7 @@ const saveTokensJsonToDisk = async (config) => {
       tokenAppInfo,
     ) => tokenAppInfo.appid === app.appid)
   ).filter(Boolean)
-  await fs.writeFile(
+  await fsPromises.writeFile(
     config.tokensJsonFilename,
     JSON.stringify(config.tokensJsonObj, null, 4),
   )
@@ -432,6 +441,100 @@ const cmdGet = async (appid, userid, options) => {
   })
 }
 
+const cmdForget = async (appid, userid) => {
+  const config = await loadConfig()
+  const tokenAccountObj = config.tokensJsonObj.find((appEntry) =>
+    appEntry.appid === appid
+  )
+    ?.accounts
+    ?.find((accountEntry) => accountEntry.userid === userid)
+  if (tokenAccountObj) {
+    tokenAccountObj.cookiesAndTokens = []
+    await saveTokensJsonToDisk(config)
+  } else {
+    consoleError(`error: cannot find appid=${appid} userid=${userid}`)
+  }
+}
+
+const cmdList = async (appid, userid, options) => {
+  const config = await loadConfig()
+  const tableRows = []
+  for (const app of config.webappsJsonObj) {
+    if (!appid || app.appid === appid) {
+      for (const account of app.accounts) {
+        if (!userid || account.userid === userid) {
+          const cookiesAndTokens = config.tokensJsonObj.find((appEntry) =>
+            appEntry.appid === app.appid
+          )
+            ?.accounts
+            ?.find((accountEntry) =>
+              accountEntry.userid === account.userid
+            )
+            .cookiesAndTokens || []
+
+          if (cookiesAndTokens.length === 0) {
+            tableRows.push({
+              expires: '',
+              appid: app.appid,
+              userid: account.userid,
+              type: '',
+              value: '',
+            })
+          }
+          cookiesAndTokens.forEach((cookieOrToken) => {
+            const credentialValue = cookieOrToken.type === 'cookie'
+              ? `${cookieOrToken.name}=${cookieOrToken.value}`
+              : cookieOrToken.value
+            const maybeShortenedCredValue = options.full
+              ? credentialValue
+              : shortenString(credentialValue, 60)
+
+            tableRows.push({
+              expires: cookieOrToken.expires,
+              appid: app.appid,
+              userid: account.userid,
+              type: cookieOrToken.type,
+              value: maybeShortenedCredValue,
+            })
+          })
+        }
+      }
+    }
+  }
+  const columns = [{
+    value: 'expires',
+    width: 18,
+    formatter: function (value) {
+      const localExpires = (expires) =>
+        expires
+          ? dayjs(expires)
+            .format(
+              'YYYY-MM-DD HH:mm',
+            )
+          : ''
+      if (dayjs().isBefore(dayjs(value))) {
+        value = this.style(localExpires(value), 'green')
+      } else {
+        value = this.style(localExpires(value), 'red')
+      }
+      return value
+    },
+  }, {
+    value: 'appid',
+  }, {
+    value: 'userid',
+  }, {
+    value: 'value',
+  }]
+  consoleLog(
+    Table(
+      columns,
+      tableRows,
+      { align: 'left', headerAlign: 'left', headerColor: 'cyan' },
+    ).render(),
+  )
+}
+
 program
   .name('wam')
   .option(
@@ -441,7 +544,7 @@ program
   )
 
 program.hook('preAction', () => {
-  if (!fs.access(program.opts().config)) {
+  if (!fs.existsSync(program.opts().config)) {
     consoleError(
       `error: config file "${program.opts().config}" does not exist`,
     )
@@ -485,5 +588,14 @@ program
     'show browser while registering users',
   )
   .action(cmdRegister)
+
+program
+  .command('forget <appid> <userid>')
+  .action(cmdForget)
+
+program
+  .command('list [appid] [userid]')
+  .option('-f, --full', 'Show full cookies/tokens')
+  .action(cmdList)
 
 await program.parseAsync(process.argv)

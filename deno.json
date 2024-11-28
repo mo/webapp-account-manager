@@ -19,6 +19,7 @@
     "cookie": "npm:cookie@^1.0.2",
     "dayjs": "npm:dayjs@^1.11.13",
     "jsonwebtoken": "npm:jsonwebtoken@^9.0.2",
-    "playwright": "npm:playwright@^1.49.0"
+    "playwright": "npm:playwright@^1.49.0",
+    "tty-table": "npm:tty-table@^4.2.3"
   }
 }
