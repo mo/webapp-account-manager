@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import fsPromises from 'node:fs/promises'
 import path from 'node:path'
 import { Option, program } from 'commander'
-import { chromium } from 'playwright'
+import playwright from 'playwright'
 import cookie from 'cookie'
 import jwt from 'jsonwebtoken'
 import Table from 'tty-table'
@@ -15,17 +15,17 @@ const parseCookie = (setCookieValue) => {
   const cookieParts = setCookieValue.split(';')
   const cookieName = cookieParts[0].split('=')[0]
   const parsedCookie = cookie.parse(setCookieValue)
-  let expires
+  let expiresUTC
   if (parsedCookie.maxAge) {
-    expires = dayjs().add(parsedCookie.maxAge, 'seconds')
+    expiresUTC = dayjs().add(parsedCookie.maxAge, 'seconds')
   } else if (parsedCookie.expires) {
-    expires = dayjs(parsedCookie.expires)
+    expiresUTC = dayjs(parsedCookie.expires)
   }
   return {
     type: 'cookie',
     name: cookieName,
     value: parsedCookie[cookieName],
-    expires: expires ? expires.utc().format() : undefined,
+    expiresUTC: expiresUTC ? expiresUTC.utc().format() : undefined,
     raw: setCookieValue,
   }
 }
@@ -40,10 +40,12 @@ const tryDecodeJWT = (maybeJwt) => {
 
 const getExpirationTime = (token) => {
   const decodedJwt = tryDecodeJWT(token)
-  if (decodedJwt) {
-    return dayjs.unix(decodedJwt.exp).utc().format()
+  // Note: "exp" claim is optional:
+  // https://www.rfc-editor.org/rfc/rfc7519.html#section-4.1.4
+  if (decodedJwt && decodedJwt.exp) {
+    return dayjs.unix(decodedJwt.exp)
   }
-  throw Error('not implemented yet')
+  return undefined
 }
 
 const waitUntilFoundAllSessionCredentials = (
@@ -102,14 +104,45 @@ const shortenString = (str, maxLen = 23) => {
   }
 }
 
-const executeSteps = async (options, app, account, playwrightFunction) => {
-  const browser = await chromium.launch({
-    headless: !options.debug,
+const getDefaultExpiresUTC = (app, cookieOrToken) => {
+  let defaultExpiresUTC
+  // For auth session cookies (cookies that makes you logged in) that
+  // are browser session cookies (no expiration, deleted when browser closes)
+  // we support the ability to set a specific cookie maxAge via the sessionCredential
+  // specification because we might know that the server treats these cookies as
+  // valid for X days even though it sends them to the client as browser session cookies.
+  // Similarly, it's possible to set maxAge in the sessionCredential specification to
+  // handle JWTs that doesn't have an .exp claim.
+  const sessionCredMaxAge = app.sessionCredentials?.find((cred) =>
+    (cred.type === 'cookie' && cookieOrToken.type === 'cookie' &&
+      cred.name === cookieOrToken.name) ||
+    (cred.type === 'authorization' && cookieOrToken.type === 'authorization' &&
+      cred.subtype === cookieOrToken.subtype)
+  )
+    ?.maxAge
+  if (sessionCredMaxAge) {
+    defaultExpiresUTC = dayjs().add(
+      sessionCredMaxAge,
+      'seconds',
+    ).utc().format()
+  } else {
+    // If we literally have no idea how long the credential is valid, then assume it's valid for at least 24h
+    defaultExpiresUTC = dayjs().add(
+      24 * 60 * 60,
+      'seconds',
+    ).utc().format()
+  }
+  return defaultExpiresUTC
+}
+
+const startPlaywrightChromium = async (debugMode) => {
+  const browser = await playwright.chromium.launch({
+    headless: !debugMode,
     logger: {
       isEnabled: (name, _severity) => name === 'api',
       log: (_name, _severity, message, _args) => {
         if (
-          options.debug &&
+          debugMode &&
           message.includes('started') &&
           !message.includes('response.headersArray') &&
           !message.includes('request.headersArray')
@@ -123,7 +156,39 @@ const executeSteps = async (options, app, account, playwrightFunction) => {
   context.setDefaultTimeout(0)
   context.setDefaultNavigationTimeout(0)
   const page = await context.newPage()
+  return { browser, context, page }
+}
 
+const executeRegisterStep = async (
+  options,
+  account,
+  playwrightFunction,
+) => {
+  const { browser, context, page } = await startPlaywrightChromium(
+    options.debug,
+  )
+  await playwrightFunction(page, account.userid, account.passwd)
+  // Wait for networkidle with timeout because page might have websocket alive forever
+  try {
+    await page.waitForLoadState('networkidle', { timeout: 5000 })
+  } catch (err) {
+    if (!(err instanceof playwright.errors.TimeoutError)) {
+      throw err
+    }
+  }
+
+  if (options.debug) {
+    consoleLog('All session credentials has been saved.')
+  }
+
+  await context.close()
+  await browser.close()
+}
+
+const executeLoginSteps = async (options, app, account, playwrightFunction) => {
+  const { browser, context, page } = await startPlaywrightChromium(
+    options.debug,
+  )
   const interceptedCookiesAndTokens = []
   const alreadySeenHeaders = new Set()
   page.on('request', async (request) => {
@@ -148,8 +213,9 @@ const executeSteps = async (options, app, account, playwrightFunction) => {
                 type: 'authorization',
                 subtype,
                 value: token,
-                expires: getExpirationTime(token),
               }
+              authHeader.expiresUTC = getExpirationTime(token) ||
+                getDefaultExpiresUTC(app, authHeader)
               if (
                 !hasSessionCredentialsDefined(app) ||
                 isSessionCredential(app, authHeader)
@@ -187,29 +253,8 @@ const executeSteps = async (options, app, account, playwrightFunction) => {
               `${headerEntry.name}: ${headerEntry.value}`,
             )
             const cookie = parseCookie(headerEntry.value)
-            if (!cookie.expires) {
-              // For auth session cookies (cookies that makes you logged in) that
-              // are browser session cookies (no expiration, deleted when browser closes)
-              // we support the ability to set a specific cookie maxAge via the sessionCredential
-              // specification because we might know that the server treats these cookies as
-              // valid for X days even though it sends them to the client as browser session cookies.
-              const sessionCredMaxAge = app.sessionCredentials?.find(
-                (cred) =>
-                  cred.type === 'cookie' &&
-                  cred.name === cookie.name,
-              )?.maxAge
-              if (sessionCredMaxAge) {
-                cookie.expires = dayjs().add(
-                  sessionCredMaxAge,
-                  'seconds',
-                ).utc().format()
-              } else {
-                // If we literally have no idea how long the cookie is valid, then assume it's valid for at least 24h
-                cookie.expires = dayjs().add(
-                  24 * 60 * 60,
-                  'seconds',
-                ).utc().format()
-              }
+            if (!cookie.expiresUTC) {
+              cookie.expiresUTC = getDefaultExpiresUTC(app, cookie)
             }
             if (
               !hasSessionCredentialsDefined(app) ||
@@ -230,6 +275,7 @@ const executeSteps = async (options, app, account, playwrightFunction) => {
   })
 
   await playwrightFunction(page, account.userid, account.passwd)
+
   await waitUntilFoundAllSessionCredentials(
     app,
     interceptedCookiesAndTokens,
@@ -250,7 +296,7 @@ const loginWithAccountAndGetFreshCredentials = async (
   account,
   tokensJsonObj,
 ) => {
-  const interceptedCookiesAndTokens = await executeSteps(
+  const interceptedCookiesAndTokens = await executeLoginSteps(
     options,
     app,
     account,
@@ -274,7 +320,7 @@ const loginWithAccountAndGetFreshCredentials = async (
 }
 
 const isValid = (credential) => {
-  return dayjs(credential.expires).isAfter(dayjs())
+  return dayjs(credential.expiresUTC).isAfter(dayjs())
 }
 
 const allCredentialsForAccountAreValid = (app, account, tokensJsonObj) => {
@@ -282,7 +328,7 @@ const allCredentialsForAccountAreValid = (app, account, tokensJsonObj) => {
     tokensJsonObj.find((tokenAppInfo) => tokenAppInfo.appid === app.appid)
       ?.accounts
       ?.find((tokenAccountEntry) => tokenAccountEntry.userid === account.userid)
-      .cookiesAndTokens || []
+      ?.cookiesAndTokens || []
 
   if (hasSessionCredentialsDefined(app)) {
     return cookiesAndTokens.filter((cookieOrToken) =>
@@ -352,9 +398,8 @@ const registerAccount = async (
   app,
   account,
 ) => {
-  await executeSteps(
+  await executeRegisterStep(
     options,
-    app,
     account,
     app.register,
   )
@@ -443,8 +488,7 @@ const cmdGet = async (appid, userid, options) => {
   })
 }
 
-const cmdForget = async (appid, userid) => {
-  const config = await loadConfig()
+const forgetCredentials = async (config, appid, userid) => {
   const tokenAccountObj = config.tokensJsonObj.find((appEntry) =>
     appEntry.appid === appid
   )
@@ -453,8 +497,19 @@ const cmdForget = async (appid, userid) => {
   if (tokenAccountObj) {
     tokenAccountObj.cookiesAndTokens = []
     await saveTokensJsonToDisk(config)
-  } else {
-    consoleError(`error: cannot find appid=${appid} userid=${userid}`)
+  }
+}
+
+const cmdForget = async (appid, userid) => {
+  const config = await loadConfig()
+  for (const app of config.webappsJsonObj) {
+    if (!appid || app.appid === appid) {
+      for (const account of app.accounts) {
+        if (!userid || account.userid === userid) {
+          await forgetCredentials(config, app.appid, account.userid)
+        }
+      }
+    }
   }
 }
 
@@ -476,7 +531,7 @@ const cmdList = async (appid, userid, options) => {
 
           if (cookiesAndTokens.length === 0) {
             tableRows.push({
-              expires: '',
+              expiresUTC: '',
               appid: app.appid,
               userid: account.userid,
               type: '',
@@ -492,7 +547,7 @@ const cmdList = async (appid, userid, options) => {
               : shortenString(credentialValue, 60)
 
             tableRows.push({
-              expires: cookieOrToken.expires,
+              expiresUTC: cookieOrToken.expiresUTC,
               appid: app.appid,
               userid: account.userid,
               type: cookieOrToken.type,
@@ -504,30 +559,32 @@ const cmdList = async (appid, userid, options) => {
     }
   }
   const columns = [{
-    value: 'expires',
+    value: 'expiresUTC',
     width: 18,
     formatter: function (value) {
-      const localExpires = (expires) =>
-        expires
-          ? dayjs(expires)
+      const localExpiration = (expiresUTC) =>
+        expiresUTC
+          ? dayjs(expiresUTC)
             .format(
               'YYYY-MM-DD HH:mm',
             )
           : ''
       if (dayjs().isBefore(dayjs(value))) {
-        value = this.style(localExpires(value), 'green')
+        value = this.style(localExpiration(value), 'green')
       } else {
-        value = this.style(localExpires(value), 'red')
+        value = this.style(localExpiration(value), 'red')
       }
       return value
     },
   }, {
     value: 'expiresRel',
-    width: 14,
+    width: 15,
     formatter: function (value, _columnIndex, rowIndex, _rowData, inputData) {
       const row = inputData[rowIndex]
-      const expiresRel = row.expires ? dayjs(row.expires).from(dayjs()) : ''
-      if (dayjs().isBefore(dayjs(row.expires))) {
+      const expiresRel = row.expiresUTC
+        ? dayjs(row.expiresUTC).from(dayjs())
+        : ''
+      if (dayjs().isBefore(dayjs(row.expiresUTC))) {
         value = this.style(expiresRel, 'green')
       } else {
         value = this.style(expiresRel, 'red')
@@ -605,7 +662,7 @@ program
   .action(cmdRegister)
 
 program
-  .command('forget <appid> <userid>')
+  .command('forget [appid] [userid]')
   .action(cmdForget)
 
 program
