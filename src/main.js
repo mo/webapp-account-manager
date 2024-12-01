@@ -221,7 +221,7 @@ const executeLoginSteps = async (options, app, account, playwrightFunction) => {
                 isSessionCredential(app, authHeader)
               ) {
                 consoleLog(
-                  `Saving authorization ${authHeader.subtype} ${
+                  `${app.appid} ${account.userid}: saving authorization ${authHeader.subtype} ${
                     shortenString(authHeader.value)
                   }`,
                 )
@@ -260,7 +260,9 @@ const executeLoginSteps = async (options, app, account, playwrightFunction) => {
               !hasSessionCredentialsDefined(app) ||
               isSessionCredential(app, cookie)
             ) {
-              consoleLog('Saving cookie: ' + cookie.name)
+              consoleLog(
+                `${app.appid} ${account.userid}: saving cookie: ${cookie.name}`,
+              )
               interceptedCookiesAndTokens.push(cookie)
             } else if (options.debug) {
               consoleLog(
