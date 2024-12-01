@@ -186,109 +186,116 @@ const executeRegisterStep = async (
 }
 
 const executeLoginSteps = async (options, app, account, playwrightFunction) => {
-  const { browser, context, page } = await startPlaywrightChromium(
-    options.debug,
-  )
   const interceptedCookiesAndTokens = []
-  const alreadySeenHeaders = new Set()
-  page.on('request', async (request) => {
-    try {
-      ;(await request.headersArray())
-        .filter((headerEntry) =>
-          !alreadySeenHeaders.has(
-            `${headerEntry.name}: ${headerEntry.value}`,
-          )
-        ).filter((headerEntry) => headerEntry.name === 'authorization')
-        .forEach(
-          (headerEntry) => {
-            alreadySeenHeaders.add(
+  let browser, context
+  try {
+    const pwObjs = await startPlaywrightChromium(
+      options.debug,
+    )
+    browser = pwObjs.browser
+    context = pwObjs.context
+    const page = pwObjs.page
+
+    const alreadySeenHeaders = new Set()
+    page.on('request', async (request) => {
+      try {
+        ;(await request.headersArray())
+          .filter((headerEntry) =>
+            !alreadySeenHeaders.has(
               `${headerEntry.name}: ${headerEntry.value}`,
             )
-            if (headerEntry.name === 'authorization') {
-              const subtype = headerEntry.value.split(' ')[0]
-              const token = headerEntry.value.slice(
-                subtype.length + 1,
+          ).filter((headerEntry) => headerEntry.name === 'authorization')
+          .forEach(
+            (headerEntry) => {
+              alreadySeenHeaders.add(
+                `${headerEntry.name}: ${headerEntry.value}`,
               )
-              const authHeader = {
-                type: 'authorization',
-                subtype,
-                value: token,
+              if (headerEntry.name === 'authorization') {
+                const subtype = headerEntry.value.split(' ')[0]
+                const token = headerEntry.value.slice(
+                  subtype.length + 1,
+                )
+                const authHeader = {
+                  type: 'authorization',
+                  subtype,
+                  value: token,
+                }
+                authHeader.expiresUTC = getExpirationTime(token) ||
+                  getDefaultExpiresUTC(app, authHeader)
+                if (
+                  !hasSessionCredentialsDefined(app) ||
+                  isSessionCredential(app, authHeader)
+                ) {
+                  consoleLog(
+                    `${app.appid} ${account.userid}: saving authorization ${authHeader.subtype} ${
+                      shortenString(authHeader.value)
+                    }`,
+                  )
+                  interceptedCookiesAndTokens.push(authHeader)
+                } else if (options.debug) {
+                  consoleLog(
+                    `Ignoring authorization header (not marked as session credential) subtype=${authHeader.subtype} value=${authHeader.value}`,
+                  )
+                }
               }
-              authHeader.expiresUTC = getExpirationTime(token) ||
-                getDefaultExpiresUTC(app, authHeader)
+            },
+          )
+      } catch {
+        // Ignore errors thrown when context.close() is called while headersArray() is running
+      }
+    })
+    page.on('response', async (response) => {
+      try {
+        ;(await response.headersArray())
+          .filter((headerEntry) =>
+            !alreadySeenHeaders.has(
+              `${headerEntry.name}: ${headerEntry.value}`,
+            )
+          )
+          .filter((headerEntry) => headerEntry.name === 'set-cookie')
+          .forEach(
+            (headerEntry) => {
+              alreadySeenHeaders.add(
+                `${headerEntry.name}: ${headerEntry.value}`,
+              )
+              const cookie = parseCookie(headerEntry.value)
+              if (!cookie.expiresUTC) {
+                cookie.expiresUTC = getDefaultExpiresUTC(app, cookie)
+              }
               if (
                 !hasSessionCredentialsDefined(app) ||
-                isSessionCredential(app, authHeader)
+                isSessionCredential(app, cookie)
               ) {
                 consoleLog(
-                  `${app.appid} ${account.userid}: saving authorization ${authHeader.subtype} ${
-                    shortenString(authHeader.value)
-                  }`,
+                  `${app.appid} ${account.userid}: saving cookie: ${cookie.name}`,
                 )
-                interceptedCookiesAndTokens.push(authHeader)
+                interceptedCookiesAndTokens.push(cookie)
               } else if (options.debug) {
                 consoleLog(
-                  `Ignoring authorization header (not marked as session credential) subtype=${authHeader.subtype} value=${authHeader.value}`,
+                  `Ignoring cookie not marked as session credential: ${cookie.name}`,
                 )
               }
-            }
-          },
-        )
-    } catch {
-      // Ignore errors thrown when context.close() is called while headersArray() is running
-    }
-  })
-  page.on('response', async (response) => {
-    try {
-      ;(await response.headersArray())
-        .filter((headerEntry) =>
-          !alreadySeenHeaders.has(
-            `${headerEntry.name}: ${headerEntry.value}`,
+            },
           )
-        )
-        .filter((headerEntry) => headerEntry.name === 'set-cookie')
-        .forEach(
-          (headerEntry) => {
-            alreadySeenHeaders.add(
-              `${headerEntry.name}: ${headerEntry.value}`,
-            )
-            const cookie = parseCookie(headerEntry.value)
-            if (!cookie.expiresUTC) {
-              cookie.expiresUTC = getDefaultExpiresUTC(app, cookie)
-            }
-            if (
-              !hasSessionCredentialsDefined(app) ||
-              isSessionCredential(app, cookie)
-            ) {
-              consoleLog(
-                `${app.appid} ${account.userid}: saving cookie: ${cookie.name}`,
-              )
-              interceptedCookiesAndTokens.push(cookie)
-            } else if (options.debug) {
-              consoleLog(
-                `Ignoring cookie not marked as session credential: ${cookie.name}`,
-              )
-            }
-          },
-        )
-    } catch {
-      // Ignore errors thrown when context.close() is called while headersArray() is running
+      } catch {
+        // Ignore errors thrown when context.close() is called while headersArray() is running
+      }
+    })
+
+    await playwrightFunction(page, account.userid, account.passwd)
+
+    await waitUntilFoundAllSessionCredentials(
+      app,
+      interceptedCookiesAndTokens,
+      options.debug,
+    )
+    if (options.debug) {
+      consoleLog('All session credentials has been saved.')
     }
-  })
-
-  await playwrightFunction(page, account.userid, account.passwd)
-
-  await waitUntilFoundAllSessionCredentials(
-    app,
-    interceptedCookiesAndTokens,
-    options.debug,
-  )
-  if (options.debug) {
-    consoleLog('All session credentials has been saved.')
+  } finally {
+    await context.close()
+    await browser.close()
   }
-
-  await context.close()
-  await browser.close()
   return interceptedCookiesAndTokens
 }
 
@@ -380,13 +387,19 @@ const cmdRefresh = async (appid, userid, options) => {
         config.tokensJsonObj,
       )
     ) {
-      await loginWithAccountAndGetFreshCredentials(
-        options,
-        app,
-        account,
-        config.tokensJsonObj,
-      )
-      await saveTokensJsonToDisk(config)
+      try {
+        await loginWithAccountAndGetFreshCredentials(
+          options,
+          app,
+          account,
+          config.tokensJsonObj,
+        )
+        await saveTokensJsonToDisk(config)
+      } catch (err) {
+        consoleError(
+          `failed to refresh credentials for ${app.appid} ${account.userid} (error: ${err})`,
+        )
+      }
     }
   }
 }
