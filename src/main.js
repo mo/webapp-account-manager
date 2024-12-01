@@ -522,6 +522,19 @@ const cmdList = async (appid, userid, options) => {
       return value
     },
   }, {
+    value: 'expiresRel',
+    width: 14,
+    formatter: function (value, _columnIndex, rowIndex, _rowData, inputData) {
+      const row = inputData[rowIndex]
+      const expiresRel = row.expires ? dayjs(row.expires).from(dayjs()) : ''
+      if (dayjs().isBefore(dayjs(row.expires))) {
+        value = this.style(expiresRel, 'green')
+      } else {
+        value = this.style(expiresRel, 'red')
+      }
+      return value
+    },
+  }, {
     value: 'appid',
   }, {
     value: 'userid',
