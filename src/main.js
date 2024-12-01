@@ -472,7 +472,7 @@ const cmdList = async (appid, userid, options) => {
             ?.find((accountEntry) =>
               accountEntry.userid === account.userid
             )
-            .cookiesAndTokens || []
+            ?.cookiesAndTokens || []
 
           if (cookiesAndTokens.length === 0) {
             tableRows.push({
