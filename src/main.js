@@ -367,30 +367,26 @@ const loadConfig = async () => {
 
 const cmdRefresh = async (appid, userid, options) => {
   const config = await loadConfig()
-  for (const app of config.webappsJsonObj) {
-    if (!appid || app.appid === appid) {
-      for (const account of app.accounts) {
-        if (!userid || account.userid === userid) {
-          if (options.debug) {
-            consoleLog(`checking ${app.appid} ${account.userid}`)
-          }
-          if (
-            options.force || !allCredentialsForAccountAreValid(
-              app,
-              account,
-              config.tokensJsonObj,
-            )
-          ) {
-            await loginWithAccountAndGetFreshCredentials(
-              options,
-              app,
-              account,
-              config.tokensJsonObj,
-            )
-            await saveTokensJsonToDisk(config)
-          }
-        }
-      }
+  for (
+    const { app, account } of getSelectedAppAccountPairs(config, appid, userid)
+  ) {
+    if (options.debug) {
+      consoleLog(`checking ${app.appid} ${account.userid}`)
+    }
+    if (
+      options.force || !allCredentialsForAccountAreValid(
+        app,
+        account,
+        config.tokensJsonObj,
+      )
+    ) {
+      await loginWithAccountAndGetFreshCredentials(
+        options,
+        app,
+        account,
+        config.tokensJsonObj,
+      )
+      await saveTokensJsonToDisk(config)
     }
   }
 }
@@ -424,29 +420,25 @@ const saveTokensJsonToDisk = async (config) => {
 
 const cmdRegister = async (appid, userid, options) => {
   const config = await loadConfig()
-  for (const app of config.webappsJsonObj) {
-    if (!appid || app.appid === appid) {
-      for (const account of app.accounts) {
-        if (!userid || account.userid === userid) {
-          consoleLog(`registering ${app.appid} ${account.userid}`)
-          await registerAccount(
-            options,
-            app,
-            account,
-          )
-          consoleLog(
-            `registration steps for account ${userid} on webapp ${appid} are done completed, will now verify that new userid/passwd actually works`,
-          )
-          await loginWithAccountAndGetFreshCredentials(
-            options,
-            app,
-            account,
-            config.tokensJsonObj,
-          )
-          await saveTokensJsonToDisk(config)
-        }
-      }
-    }
+  for (
+    const { app, account } of getSelectedAppAccountPairs(config, appid, userid)
+  ) {
+    consoleLog(`registering ${app.appid} ${account.userid}`)
+    await registerAccount(
+      options,
+      app,
+      account,
+    )
+    consoleLog(
+      `registration steps for account ${userid} on webapp ${appid} are done completed, will now verify that new userid/passwd actually works`,
+    )
+    await loginWithAccountAndGetFreshCredentials(
+      options,
+      app,
+      account,
+      config.tokensJsonObj,
+    )
+    await saveTokensJsonToDisk(config)
   }
 }
 
@@ -504,62 +496,85 @@ const forgetCredentials = async (config, appid, userid) => {
 
 const cmdForget = async (appid, userid) => {
   const config = await loadConfig()
-  for (const app of config.webappsJsonObj) {
-    if (!appid || app.appid === appid) {
-      for (const account of app.accounts) {
-        if (!userid || account.userid === userid) {
-          await forgetCredentials(config, app.appid, account.userid)
-        }
-      }
-    }
+  for (
+    const { app, account } of getSelectedAppAccountPairs(config, appid, userid)
+  ) {
+    await forgetCredentials(config, app.appid, account.userid)
   }
 }
 
-const cmdList = async (appid, userid, options) => {
-  const config = await loadConfig()
-  const tableRows = []
+const getSelectedAppAccountPairs = (config, appid, userid) => {
+  const selectedAppAccountPairs = []
+  if (appid && !config.webappsJsonObj.map((app) => app.appid).includes(appid)) {
+    consoleError(`error: no such appid "${appid}"`)
+    process.exit(1)
+  }
+  if (
+    userid &&
+    !config.webappsJsonObj.find((app) => app.appid === appid).accounts.map(
+      (account) => account.userid,
+    ).includes(userid)
+  ) {
+    consoleError(
+      `error: .accounts[] for appid "${appid}" does not contain userid "${userid}"`,
+    )
+    process.exit(1)
+  }
   for (const app of config.webappsJsonObj) {
     if (!appid || app.appid === appid) {
       for (const account of app.accounts) {
         if (!userid || account.userid === userid) {
-          const cookiesAndTokens = config.tokensJsonObj.find((appEntry) =>
-            appEntry.appid === app.appid
-          )
-            ?.accounts
-            ?.find((accountEntry) =>
-              accountEntry.userid === account.userid
-            )
-            ?.cookiesAndTokens || []
-
-          if (cookiesAndTokens.length === 0) {
-            tableRows.push({
-              expiresUTC: '',
-              appid: app.appid,
-              userid: account.userid,
-              type: '',
-              value: '',
-            })
-          }
-          cookiesAndTokens.forEach((cookieOrToken) => {
-            const credentialValue = cookieOrToken.type === 'cookie'
-              ? `${cookieOrToken.name}=${cookieOrToken.value}`
-              : cookieOrToken.value
-            const maybeShortenedCredValue = options.full
-              ? credentialValue
-              : shortenString(credentialValue, 60)
-
-            tableRows.push({
-              expiresUTC: cookieOrToken.expiresUTC,
-              appid: app.appid,
-              userid: account.userid,
-              type: cookieOrToken.type,
-              value: maybeShortenedCredValue,
-            })
+          selectedAppAccountPairs.push({
+            app,
+            account,
           })
         }
       }
     }
   }
+  return selectedAppAccountPairs
+}
+
+const cmdList = async (appid, userid, options) => {
+  const config = await loadConfig()
+  const tableRows = []
+  for (
+    const { app, account } of getSelectedAppAccountPairs(config, appid, userid)
+  ) {
+    const cookiesAndTokens = config.tokensJsonObj.find((appEntry) =>
+      appEntry.appid === app.appid
+    )
+      ?.accounts
+      ?.find((accountEntry) => accountEntry.userid === account.userid)
+      ?.cookiesAndTokens || []
+
+    if (cookiesAndTokens.length === 0) {
+      tableRows.push({
+        expiresUTC: '',
+        appid: app.appid,
+        userid: account.userid,
+        type: '',
+        value: '',
+      })
+    }
+    cookiesAndTokens.forEach((cookieOrToken) => {
+      const credentialValue = cookieOrToken.type === 'cookie'
+        ? `${cookieOrToken.name}=${cookieOrToken.value}`
+        : cookieOrToken.value
+      const maybeShortenedCredValue = options.full
+        ? credentialValue
+        : shortenString(credentialValue, 60)
+
+      tableRows.push({
+        expiresUTC: cookieOrToken.expiresUTC,
+        appid: app.appid,
+        userid: account.userid,
+        type: cookieOrToken.type,
+        value: maybeShortenedCredValue,
+      })
+    })
+  }
+
   const columns = [{
     value: 'expiresUTC',
     width: 18,
