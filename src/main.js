@@ -287,7 +287,7 @@ const allCredentialsForAccountAreValid = (app, account, tokensJsonObj) => {
   if (hasSessionCredentialsDefined(app)) {
     return cookiesAndTokens.filter((cookieOrToken) =>
       isSessionCredential(app, cookieOrToken)
-    ).every(isValid)
+    ).filter(isValid).length === app.sessionCredentials.length
   } else {
     return cookiesAndTokens.every(isValid)
   }
