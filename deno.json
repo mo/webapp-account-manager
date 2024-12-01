@@ -1,5 +1,6 @@
 {
   "tasks": {
+    "check": "deno lint && deno fmt",
     "test": "./wam -c example.webapps.js refresh --force --debug"
   },
   "lint": {
