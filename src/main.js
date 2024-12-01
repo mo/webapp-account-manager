@@ -443,7 +443,7 @@ const cmdRegister = async (appid, userid, options) => {
       account,
     )
     consoleLog(
-      `registration steps for account ${userid} on webapp ${appid} are done completed, will now verify that new userid/passwd actually works`,
+      `registration steps for account ${account.userid} on webapp ${app.appid} are done completed, will now verify that new userid/passwd actually works`,
     )
     await loginWithAccountAndGetFreshCredentials(
       options,
