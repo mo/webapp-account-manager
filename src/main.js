@@ -541,11 +541,13 @@ const getSelectedAppAccountPairs = (config, appid, userid) => {
   for (const app of config.webappsJsonObj) {
     if (!appid || app.appid === appid) {
       for (const account of app.accounts) {
-        if (!userid || account.userid === userid) {
-          selectedAppAccountPairs.push({
-            app,
-            account,
-          })
+        if (account.enabled !== false) {
+          if (!userid || account.userid === userid) {
+            selectedAppAccountPairs.push({
+              app,
+              account,
+            })
+          }
         }
       }
     }
