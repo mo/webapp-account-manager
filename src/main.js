@@ -328,11 +328,15 @@ const loginWithAccountAndGetFreshCredentials = async (
   tokensJsonAccountEntry.cookiesAndTokens = interceptedCookiesAndTokens
 }
 
-const isValid = (credential) => {
-  return dayjs(credential.expiresUTC).isAfter(dayjs())
+const isValidForAtleast15Minutes = (credential) => {
+  return dayjs(credential.expiresUTC).diff(dayjs(), 'minute') >= 20
 }
 
-const allCredentialsForAccountAreValid = (app, account, tokensJsonObj) => {
+const allCredentialsForAccountAreValidForAtLeast15Minutes = (
+  app,
+  account,
+  tokensJsonObj,
+) => {
   const cookiesAndTokens =
     tokensJsonObj.find((tokenAppInfo) => tokenAppInfo.appid === app.appid)
       ?.accounts
@@ -342,9 +346,10 @@ const allCredentialsForAccountAreValid = (app, account, tokensJsonObj) => {
   if (hasSessionCredentialsDefined(app)) {
     return cookiesAndTokens.filter((cookieOrToken) =>
       isSessionCredential(app, cookieOrToken)
-    ).filter(isValid).length === app.sessionCredentials.length
+    ).filter(isValidForAtleast15Minutes).length ===
+      app.sessionCredentials.length
   } else {
-    return cookiesAndTokens.every(isValid)
+    return cookiesAndTokens.every(isValidForAtleast15Minutes)
   }
 }
 
@@ -381,7 +386,7 @@ const cmdRefresh = async (appid, userid, options) => {
       consoleLog(`checking ${app.appid} ${account.userid}`)
     }
     if (
-      options.force || !allCredentialsForAccountAreValid(
+      options.force || !allCredentialsForAccountAreValidForAtLeast15Minutes(
         app,
         account,
         config.tokensJsonObj,
