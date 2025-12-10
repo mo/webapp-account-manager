@@ -185,6 +185,40 @@ const executeRegisterStep = async (
   await browser.close()
 }
 
+const executeDeviceflowLoginSteps = async (
+  options,
+  app,
+  account,
+  activationUrl,
+  playwrightFunction,
+) => {
+  let browser, context
+  try {
+    const pwObjs = await startPlaywrightChromium(
+      options.debug,
+    )
+    browser = pwObjs.browser
+    context = pwObjs.context
+    const page = pwObjs.page
+    consoleLog(
+      `${app.appid} ${account.userid}: executing interactive login steps for device flow`,
+    )
+    await playwrightFunction(
+      page,
+      activationUrl,
+      account.userid,
+      account.passwd,
+    )
+    if (options.debug) {
+      // Add small delay in debug mode because sometimes the login form displays an error saying "User not permitted to use device flow"
+      await page.waitForTimeout(5000)
+    }
+  } finally {
+    await context.close()
+    await browser.close()
+  }
+}
+
 const executeLoginSteps = async (options, app, account, playwrightFunction) => {
   const interceptedCookiesAndTokens = []
   let browser, context
@@ -299,18 +333,7 @@ const executeLoginSteps = async (options, app, account, playwrightFunction) => {
   return interceptedCookiesAndTokens
 }
 
-const loginWithAccountAndGetFreshCredentials = async (
-  options,
-  app,
-  account,
-  tokensJsonObj,
-) => {
-  const interceptedCookiesAndTokens = await executeLoginSteps(
-    options,
-    app,
-    account,
-    app.login,
-  )
+const ensureTokensAccountEntryExists = (tokensJsonObj, app, account) => {
   let tokensJsonAppEntry = tokensJsonObj.find((entry) =>
     entry.appid === app.appid
   )
@@ -325,6 +348,26 @@ const loginWithAccountAndGetFreshCredentials = async (
     tokensJsonAccountEntry = { userid: account.userid }
     tokensJsonAppEntry.accounts.push(tokensJsonAccountEntry)
   }
+  return tokensJsonAccountEntry
+}
+
+const loginWithAccountAndGetFreshCredentials = async (
+  options,
+  app,
+  account,
+  tokensJsonObj,
+) => {
+  const interceptedCookiesAndTokens = await executeLoginSteps(
+    options,
+    app,
+    account,
+    app.login,
+  )
+  const tokensJsonAccountEntry = ensureTokensAccountEntryExists(
+    tokensJsonObj,
+    app,
+    account,
+  )
   tokensJsonAccountEntry.cookiesAndTokens = interceptedCookiesAndTokens
 }
 
@@ -332,7 +375,7 @@ const isValidForAtleast15Minutes = (credential) => {
   return dayjs(credential.expiresUTC).diff(dayjs(), 'minute') >= 20
 }
 
-const allCredentialsForAccountAreValidForAtLeast15Minutes = (
+const allCredentialsForAccountAreFresh = (
   app,
   account,
   tokensJsonObj,
@@ -344,12 +387,13 @@ const allCredentialsForAccountAreValidForAtLeast15Minutes = (
       ?.cookiesAndTokens || []
 
   if (hasSessionCredentialsDefined(app)) {
-    return cookiesAndTokens.filter((cookieOrToken) =>
-      isSessionCredential(app, cookieOrToken)
-    ).filter(isValidForAtleast15Minutes).length ===
-      app.sessionCredentials.length
+    return cookiesAndTokens.length !== 0 &&
+      cookiesAndTokens.filter((cookieOrToken) =>
+        isSessionCredential(app, cookieOrToken)
+      ).every(isValidForAtleast15Minutes)
   } else {
-    return cookiesAndTokens.every(isValidForAtleast15Minutes)
+    return cookiesAndTokens.length !== 0 &&
+      cookiesAndTokens.every(isValidForAtleast15Minutes)
   }
 }
 
@@ -377,6 +421,71 @@ const loadConfig = async () => {
   return { webappsJsonObj, tokensJsonObj, tokensJsonFilename }
 }
 
+const refreshCredentialsForAccount = async (
+  options,
+  app,
+  account,
+  tokensJsonObj,
+) => {
+  if (app.type === 'deviceflow') {
+    const deviceResp = await fetch(`${app.idpBaseUrl}/device/code`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ 'client_id': app.clientId }).toString(),
+    })
+    const {
+      activation_url: activationUrl,
+      user_code: userCode,
+      device_code: deviceCode,
+    } = await deviceResp.json()
+    await executeDeviceflowLoginSteps(
+      options,
+      app,
+      account,
+      activationUrl + '?code=' + userCode,
+      app.login,
+    )
+    const tokenResp = await fetch(`${app.idpBaseUrl}/token`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
+        'device_code': deviceCode,
+        'client_id': app.clientId,
+      }).toString(),
+    })
+    const { access_token: accessToken } = await tokenResp.json()
+
+    if (!accessToken) {
+      throw Error(
+        `failed to refresh credentials for ${app.appid} ${account.userid}`,
+      )
+    }
+
+    const authEntry = {
+      type: 'authorization',
+      subtype: 'Bearer',
+      value: accessToken,
+    }
+    authEntry.expiresUTC = getExpirationTime(accessToken) ||
+      getDefaultExpiresUTC(app, authEntry)
+
+    const tokensJsonAccountEntry = ensureTokensAccountEntryExists(
+      tokensJsonObj,
+      app,
+      account,
+    )
+    tokensJsonAccountEntry.cookiesAndTokens = [authEntry]
+  } else {
+    return await loginWithAccountAndGetFreshCredentials(
+      options,
+      app,
+      account,
+      tokensJsonObj,
+    )
+  }
+}
+
 const cmdRefresh = async (appid, userid, options) => {
   const config = await loadConfig()
   for (
@@ -386,14 +495,14 @@ const cmdRefresh = async (appid, userid, options) => {
       consoleLog(`checking ${app.appid} ${account.userid}`)
     }
     if (
-      options.force || !allCredentialsForAccountAreValidForAtLeast15Minutes(
+      options.force || !allCredentialsForAccountAreFresh(
         app,
         account,
         config.tokensJsonObj,
       )
     ) {
       try {
-        await loginWithAccountAndGetFreshCredentials(
+        await refreshCredentialsForAccount(
           options,
           app,
           account,
@@ -580,7 +689,7 @@ const cmdList = async (appid, userid, options) => {
     cookiesAndTokens.forEach((cookieOrToken) => {
       const credentialValue = cookieOrToken.type === 'cookie'
         ? `${cookieOrToken.name}=${cookieOrToken.value}`
-        : cookieOrToken.value
+        : (cookieOrToken.value ?? '')
       const maybeShortenedCredValue = options.full
         ? credentialValue
         : shortenString(credentialValue, 60)
