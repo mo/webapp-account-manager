@@ -587,11 +587,23 @@ const isSessionCredential = (app, cookieOrToken) =>
 const cmdGet = async (appid, userid, options) => {
   const config = await loadConfig()
   const app = config.webappsJsonObj.find((appEntry) => appEntry.appid === appid)
-  const cookiesAndTokens =
-    config.tokensJsonObj.find((appEntry) => appEntry.appid === appid)
-      ?.accounts
-      ?.find((accountEntry) => accountEntry.userid === userid)
-      .cookiesAndTokens || []
+  if (!app) {
+    consoleError(`error: no such appid "${appid}"`)
+    process.exit(1)
+  }
+  const accountEntry = config.tokensJsonObj.find((appEntry) =>
+    appEntry.appid === appid
+  )
+    ?.accounts
+    ?.find((accountEntry) => accountEntry.userid === userid)
+
+  if (!accountEntry) {
+    consoleError(`error: no such account with userid "${userid}"`)
+    process.exit(1)
+  }
+
+  const cookiesAndTokens = accountEntry
+    .cookiesAndTokens || []
   let credentials
   if (app.sessionCredentials && app.sessionCredentials.length > 0) {
     credentials = cookiesAndTokens.filter((cookieOrToken) =>
