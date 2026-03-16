@@ -1,0 +1,2 @@
+#!/bin/bash
+mise upgrade deno --bump
