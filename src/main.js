@@ -327,8 +327,12 @@ const executeLoginSteps = async (options, app, account, playwrightFunction) => {
       consoleLog('All session credentials has been saved.')
     }
   } finally {
-    await context.close()
-    await browser.close()
+    if (context) {
+      await context.close()
+    }
+    if (browser) {
+      await browser.close()
+    }
   }
   return interceptedCookiesAndTokens
 }
@@ -454,11 +458,14 @@ const refreshCredentialsForAccount = async (
         'client_id': app.clientId,
       }).toString(),
     })
-    const { access_token: accessToken } = await tokenResp.json()
+    const tokenRespJson = await tokenResp.json()
+    const accessToken = tokenRespJson.access_token
 
     if (!accessToken) {
       throw Error(
-        `failed to refresh credentials for ${app.appid} ${account.userid}`,
+        `failed to refresh credentials for ${app.appid} ${account.userid} ... tokenResponseHttpStatus=${tokenResp.status} tokenResponse=${
+          JSON.stringify(tokenRespJson, null, 4)
+        }`,
       )
     }
 
