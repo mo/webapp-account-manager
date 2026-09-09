@@ -425,12 +425,115 @@ const loadConfig = async () => {
   return { webappsJsonObj, tokensJsonObj, tokensJsonFilename }
 }
 
+const loginWithPasswordGrantAndGetFreshCredentials = async (
+  app,
+  account,
+  tokensJsonObj,
+) => {
+  const existingRefreshToken = tokensJsonObj
+    .find((entry) => entry.appid === app.appid)
+    ?.accounts
+    ?.find((entry) => entry.userid === account.userid)
+    ?.cookiesAndTokens
+    ?.find((cred) => cred.type === 'oauth2-refresh')
+  let tokenRespJson
+  if (existingRefreshToken?.value) {
+    try {
+      const refreshResp = await fetch(app.tokenUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          'client_id': app.clientId,
+          'grant_type': 'refresh_token',
+          'refresh_token': existingRefreshToken.value,
+        }).toString(),
+      })
+      tokenRespJson = await refreshResp.json()
+      if (!tokenRespJson.access_token) {
+        tokenRespJson = undefined
+      }
+    } catch {
+      tokenRespJson = undefined
+    }
+  }
+  if (!tokenRespJson?.access_token) {
+    const tokenResp = await fetch(app.tokenUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        'client_id': app.clientId,
+        'grant_type': 'password',
+        'username': account.userid,
+        'password': account.passwd,
+        ...(app.scope ? { 'scope': app.scope } : {}),
+      }).toString(),
+    })
+    tokenRespJson = await tokenResp.json()
+  }
+  const accessToken = tokenRespJson.access_token
+  if (!accessToken) {
+    throw Error(
+      `failed to refresh credentials for ${app.appid} ${account.userid} ... tokenResponse=${
+        JSON.stringify(tokenRespJson, null, 4)
+      }`,
+    )
+  }
+  const authEntry = {
+    type: 'authorization',
+    subtype: 'Bearer',
+    value: accessToken,
+  }
+  authEntry.expiresUTC = getExpirationTime(accessToken) ||
+    getDefaultExpiresUTC(app, authEntry)
+  const cookiesAndTokens = []
+  if (
+    authEntry &&
+    (!app?.sessionCredentials?.length ||
+      app?.sessionCredentials?.find((entry) => entry.type === 'authorization'))
+  ) {
+    cookiesAndTokens.push(authEntry)
+  }
+  if (
+    tokenRespJson.refresh_token && (!app?.sessionCredentials?.length ||
+      app?.sessionCredentials?.find((entry) =>
+        entry.type === 'oauth2-refresh"'
+      ))
+  ) {
+    cookiesAndTokens.push({
+      type: 'oauth2-refresh',
+      value: tokenRespJson.refresh_token,
+      expiresUTC: dayjs().add(
+        tokenRespJson.refresh_expires_in || 8 * 24 * 60 * 60,
+        'seconds',
+      ).utc().format(),
+    })
+  }
+  const tokensJsonAccountEntry = ensureTokensAccountEntryExists(
+    tokensJsonObj,
+    app,
+    account,
+  )
+  tokensJsonAccountEntry.cookiesAndTokens = cookiesAndTokens
+  consoleLog(
+    `${app.appid} ${account.userid}: saving authorization Bearer ${
+      shortenString(accessToken)
+    }`,
+  )
+}
+
 const refreshCredentialsForAccount = async (
   options,
   app,
   account,
   tokensJsonObj,
 ) => {
+  if (app.type === 'oauth2-password') {
+    return await loginWithPasswordGrantAndGetFreshCredentials(
+      app,
+      account,
+      tokensJsonObj,
+    )
+  }
   if (app.type === 'deviceflow') {
     const deviceResp = await fetch(`${app.idpBaseUrl}/device/code`, {
       method: 'POST',
@@ -583,7 +686,9 @@ const isMatchingSessionCredential = (sessionCredential, cookieOrToken) => {
   const isSessionToken = sessionCredential.type === 'authorization' &&
     cookieOrToken.type === 'authorization' &&
     cookieOrToken.subtype === sessionCredential.subtype
-  return isSessionCookie || isSessionToken
+  const isRefreshToken = sessionCredential.type === 'oauth2-refresh' &&
+    cookieOrToken.type === 'oauth2-refresh'
+  return isSessionCookie || isSessionToken || isRefreshToken
 }
 
 const isSessionCredential = (app, cookieOrToken) =>
@@ -761,6 +866,8 @@ const cmdList = async (appid, userid, options) => {
   }, {
     value: 'userid',
   }, {
+    value: 'type',
+  }, {
     value: 'value',
   }]
   consoleLog(
@@ -807,7 +914,12 @@ program
     new Option(
       '-t, --type [type]',
       'type of session credentials to get',
-    ).default('all').choices(['cookie', 'authorization', 'all']),
+    ).default('all').choices([
+      'cookie',
+      'authorization',
+      'oauth2-refresh',
+      'all',
+    ]),
   )
   .addOption(
     new Option(
