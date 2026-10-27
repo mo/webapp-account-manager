@@ -788,6 +788,17 @@ const getSelectedAppAccountPairs = (config, appid, userid) => {
   return selectedAppAccountPairs
 }
 
+const getCredentialNote = (cookieOrToken) => {
+  if (cookieOrToken.type !== 'authorization') {
+    return ''
+  }
+  const audience = tryDecodeJWT(cookieOrToken.value)?.aud
+  if (!audience) {
+    return ''
+  }
+  return `audience:${[audience].flat().join(',')}`
+}
+
 const cmdList = async (appid, userid, options) => {
   const config = await loadConfig()
   const tableRows = []
@@ -808,6 +819,7 @@ const cmdList = async (appid, userid, options) => {
         userid: account.userid,
         type: '',
         value: '',
+        note: '',
       })
     }
     cookiesAndTokens.forEach((cookieOrToken) => {
@@ -824,6 +836,7 @@ const cmdList = async (appid, userid, options) => {
         userid: account.userid,
         type: cookieOrToken.type,
         value: maybeShortenedCredValue,
+        note: getCredentialNote(cookieOrToken),
       })
     })
   }
@@ -869,6 +882,8 @@ const cmdList = async (appid, userid, options) => {
     value: 'type',
   }, {
     value: 'value',
+  }, {
+    value: 'note',
   }]
   consoleLog(
     Table(
