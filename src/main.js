@@ -796,7 +796,7 @@ const getCredentialNote = (cookieOrToken) => {
   if (!audience) {
     return ''
   }
-  return `audience:${[audience].flat().join(',')}`
+  return `audience:${[audience].flat().join('\n')}`
 }
 
 const cmdList = async (appid, userid, options) => {
