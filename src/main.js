@@ -94,7 +94,7 @@ const waitUntilFoundAllSessionCredentials = (
 const hasSessionCredentialsDefined = (app) =>
   app.sessionCredentials && app.sessionCredentials.length > 0
 
-const shortenString = (str, maxLen = 23) => {
+const shortenString = (str, maxLen = 18) => {
   if (str.length > maxLen) {
     const prefixSuffixLength = Math.floor((maxLen - 3) / 2)
     return str.slice(0, prefixSuffixLength) + '...' +
@@ -828,7 +828,7 @@ const cmdList = async (appid, userid, options) => {
         : (cookieOrToken.value ?? '')
       const maybeShortenedCredValue = options.full
         ? credentialValue
-        : shortenString(credentialValue, 60)
+        : shortenString(credentialValue)
 
       tableRows.push({
         expiresUTC: cookieOrToken.expiresUTC,
