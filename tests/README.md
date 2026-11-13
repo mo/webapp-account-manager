@@ -31,6 +31,7 @@ playwright chromium for the browser based logins
 
   Cookie/JWT lifetime, audience etc. are controlled with query params on the
   login URL, see the comment at the top of the file.
+
 - `fixtures/*.webapps.js` wam configs pointing at the fakeserver
   (`FAKESERVER_URL`).
 - `tokens-summary.js`, `table-summary.js`, `describe-values.js` turn random

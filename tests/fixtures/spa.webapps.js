@@ -4,14 +4,16 @@ import process from 'node:process'
 
 const base = process.env.FAKESERVER_URL
 
-const spaLogin = (query = '') => async (page, userid, passwd) => {
-  await page.goto(`${base}/spa/login${query}`)
-  await page.getByLabel('Email').click()
-  await page.keyboard.type(userid)
-  await page.getByLabel('Password').click()
-  await page.keyboard.type(passwd)
-  await page.getByRole('button', { name: 'Log in' }).click()
-}
+const spaLogin =
+  (query = '') =>
+  async (page, userid, passwd) => {
+    await page.goto(`${base}/spa/login${query}`)
+    await page.getByLabel('Email').click()
+    await page.keyboard.type(userid)
+    await page.getByLabel('Password').click()
+    await page.keyboard.type(passwd)
+    await page.getByRole('button', { name: 'Log in' }).click()
+  }
 
 export default [
   {
@@ -33,9 +35,7 @@ export default [
     // JWT without "exp" claim; lifetime comes from maxAge in the config
     appid: 'spa-noexp',
     accounts: [{ userid: 'alice@example.com', passwd: 'alice-pw' }],
-    sessionCredentials: [
-      { type: 'authorization', subtype: 'Bearer', maxAge: 2700 },
-    ],
+    sessionCredentials: [{ type: 'authorization', subtype: 'Bearer', maxAge: 2700 }],
     login: spaLogin('?noexp=1'),
   },
   {

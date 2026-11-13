@@ -15,24 +15,16 @@ import { consoleError, consoleLog } from './console.js'
 // this browser cookie? Compares name, value, domain (playwright prefixes
 // Domain cookies with "." and leaves host-only cookies without it) and path
 // (defaulting to the directory of the response URL, RFC 6265 section 5.1.4).
-const setCookieHeaderMatches = (
-  browserCookie,
-  { header, responseUrl },
-  matchScope,
-) => {
+const setCookieHeaderMatches = (browserCookie, { header, responseUrl }, matchScope) => {
   const parsed = cookie.parseSetCookie(header, { decode: (v) => v })
-  if (
-    parsed.name !== browserCookie.name || parsed.value !== browserCookie.value
-  ) {
+  if (parsed.name !== browserCookie.name || parsed.value !== browserCookie.value) {
     return false
   }
   if (!matchScope) {
     return true
   }
   const url = new URL(responseUrl)
-  const domain = parsed.domain
-    ? '.' + parsed.domain.toLowerCase().replace(/^\./, '')
-    : url.hostname
+  const domain = parsed.domain ? '.' + parsed.domain.toLowerCase().replace(/^\./, '') : url.hostname
   let path = parsed.path
   if (!path || !path.startsWith('/')) {
     const lastSlash = url.pathname.lastIndexOf('/')
@@ -48,17 +40,15 @@ const setCookieHeaderMatches = (
 // IP address as host-only) fall back to matching on name and value only.
 const cookieFromBrowser = (browserCookie, setCookieHeaders) => {
   const findHeader = (matchScope) =>
-    setCookieHeaders.findLast((entry) =>
-      setCookieHeaderMatches(browserCookie, entry, matchScope)
-    )?.header
+    setCookieHeaders.findLast((entry) => setCookieHeaderMatches(browserCookie, entry, matchScope))
+      ?.header
   return {
     type: 'cookie',
     name: browserCookie.name,
     value: browserCookie.value,
     // expires is -1 for browser session cookies
-    expiresUTC: browserCookie.expires > 0
-      ? dayjs.unix(browserCookie.expires).utc().format()
-      : undefined,
+    expiresUTC:
+      browserCookie.expires > 0 ? dayjs.unix(browserCookie.expires).utc().format() : undefined,
     raw: findHeader(true) ?? findHeader(false),
   }
 }
@@ -83,11 +73,7 @@ const getExpirationTime = (token) => {
 
 // Polls getCredentials() until every sessionCredential has been found and
 // returns the credentials from the last poll.
-const waitUntilFoundAllSessionCredentials = async (
-  app,
-  getCredentials,
-  debug,
-) => {
+const waitUntilFoundAllSessionCredentials = async (app, getCredentials, debug) => {
   // Without sessionCredentials every cookie/token is saved, so there is
   // nothing specific to wait for (every() on an empty list is true).
   const sessionCredentials = app.sessionCredentials || []
@@ -95,20 +81,21 @@ const waitUntilFoundAllSessionCredentials = async (
     await new Promise((resolve) => setTimeout(resolve, 1250))
     const credentials = await getCredentials()
     const isFound = (sessionCred) =>
-      credentials.some((cookieOrToken) =>
-        isMatchingSessionCredential(sessionCred, cookieOrToken)
-      )
+      credentials.some((cookieOrToken) => isMatchingSessionCredential(sessionCred, cookieOrToken))
     const allFound = sessionCredentials.every(isFound)
     if (debug) {
       if (!allFound) {
         consoleLog(`Still havn't found, what i'm looking for:`)
       }
       consoleLog(
-        sessionCredentials.map((sessionCred) =>
-          `${
-            isFound(sessionCred) ? '✅ Found        ' : '❓ Not Found Yet'
-          } ---> ${JSON.stringify(sessionCred)}`
-        ).join('\n') + '\n\n',
+        sessionCredentials
+          .map(
+            (sessionCred) =>
+              `${
+                isFound(sessionCred) ? '✅ Found        ' : '❓ Not Found Yet'
+              } ---> ${JSON.stringify(sessionCred)}`,
+          )
+          .join('\n') + '\n\n',
       )
     }
     if (allFound) {
@@ -123,8 +110,7 @@ const hasSessionCredentialsDefined = (app) =>
 const shortenString = (str, maxLen = 18) => {
   if (str.length > maxLen) {
     const prefixSuffixLength = Math.floor((maxLen - 3) / 2)
-    return str.slice(0, prefixSuffixLength) + '...' +
-      str.slice(-1 * prefixSuffixLength)
+    return str.slice(0, prefixSuffixLength) + '...' + str.slice(-1 * prefixSuffixLength)
   } else {
     return str
   }
@@ -139,24 +125,23 @@ const getDefaultExpiresUTC = (app, cookieOrToken) => {
   // valid for X days even though it sends them to the client as browser session cookies.
   // Similarly, it's possible to set maxAge in the sessionCredential specification to
   // handle JWTs that doesn't have an .exp claim.
-  const sessionCredMaxAge = app.sessionCredentials?.find((cred) =>
-    (cred.type === 'cookie' && cookieOrToken.type === 'cookie' &&
-      cred.name === cookieOrToken.name) ||
-    (cred.type === 'authorization' && cookieOrToken.type === 'authorization' &&
-      cred.subtype === cookieOrToken.subtype)
-  )
-    ?.maxAge
+  const sessionCredMaxAge = app.sessionCredentials?.find(
+    (cred) =>
+      (cred.type === 'cookie' &&
+        cookieOrToken.type === 'cookie' &&
+        cred.name === cookieOrToken.name) ||
+      (cred.type === 'authorization' &&
+        cookieOrToken.type === 'authorization' &&
+        cred.subtype === cookieOrToken.subtype),
+  )?.maxAge
   if (sessionCredMaxAge) {
-    defaultExpiresUTC = dayjs().add(
-      sessionCredMaxAge,
-      'seconds',
-    ).utc().format()
+    defaultExpiresUTC = dayjs().add(sessionCredMaxAge, 'seconds').utc().format()
   } else {
     // If we literally have no idea how long the credential is valid, then assume it's valid for at least 24h
-    defaultExpiresUTC = dayjs().add(
-      24 * 60 * 60,
-      'seconds',
-    ).utc().format()
+    defaultExpiresUTC = dayjs()
+      .add(24 * 60 * 60, 'seconds')
+      .utc()
+      .format()
   }
   return defaultExpiresUTC
 }
@@ -185,14 +170,8 @@ const startPlaywrightChromium = async (debugMode) => {
   return { browser, context, page }
 }
 
-const executeRegisterStep = async (
-  options,
-  account,
-  playwrightFunction,
-) => {
-  const { browser, context, page } = await startPlaywrightChromium(
-    options.debug,
-  )
+const executeRegisterStep = async (options, account, playwrightFunction) => {
+  const { browser, context, page } = await startPlaywrightChromium(options.debug)
   await playwrightFunction(page, account.userid, account.passwd)
   // Wait for networkidle with timeout because page might have websocket alive forever
   try {
@@ -220,21 +199,12 @@ const executeDeviceflowLoginSteps = async (
 ) => {
   let browser, context
   try {
-    const pwObjs = await startPlaywrightChromium(
-      options.debug,
-    )
+    const pwObjs = await startPlaywrightChromium(options.debug)
     browser = pwObjs.browser
     context = pwObjs.context
     const page = pwObjs.page
-    consoleLog(
-      `${app.appid} ${account.userid}: executing interactive login steps for device flow`,
-    )
-    await playwrightFunction(
-      page,
-      activationUrl,
-      account.userid,
-      account.passwd,
-    )
+    consoleLog(`${app.appid} ${account.userid}: executing interactive login steps for device flow`)
+    await playwrightFunction(page, activationUrl, account.userid, account.passwd)
     if (options.debug) {
       // Add small delay in debug mode because sometimes the login form displays an error saying "User not permitted to use device flow"
       await page.waitForTimeout(5000)
@@ -250,9 +220,7 @@ const executeLoginSteps = async (options, app, account, playwrightFunction) => {
   let interceptedCookiesAndTokens = []
   let browser, context
   try {
-    const pwObjs = await startPlaywrightChromium(
-      options.debug,
-    )
+    const pwObjs = await startPlaywrightChromium(options.debug)
     browser = pwObjs.browser
     context = pwObjs.context
     const page = pwObjs.page
@@ -261,46 +229,36 @@ const executeLoginSteps = async (options, app, account, playwrightFunction) => {
     page.on('request', async (request) => {
       try {
         ;(await request.headersArray())
-          .filter((headerEntry) =>
-            !alreadySeenHeaders.has(
-              `${headerEntry.name}: ${headerEntry.value}`,
-            )
-          ).filter((headerEntry) => headerEntry.name === 'authorization')
-          .forEach(
-            (headerEntry) => {
-              alreadySeenHeaders.add(
-                `${headerEntry.name}: ${headerEntry.value}`,
-              )
-              if (headerEntry.name === 'authorization') {
-                const subtype = headerEntry.value.split(' ')[0]
-                const token = headerEntry.value.slice(
-                  subtype.length + 1,
-                )
-                const authHeader = {
-                  type: 'authorization',
-                  subtype,
-                  value: token,
-                }
-                authHeader.expiresUTC = getExpirationTime(token) ||
-                  getDefaultExpiresUTC(app, authHeader)
-                if (
-                  !hasSessionCredentialsDefined(app) ||
-                  isSessionCredential(app, authHeader)
-                ) {
-                  consoleLog(
-                    `${app.appid} ${account.userid}: saving authorization ${authHeader.subtype} ${
-                      shortenString(authHeader.value)
-                    }`,
-                  )
-                  interceptedCookiesAndTokens.push(authHeader)
-                } else if (options.debug) {
-                  consoleLog(
-                    `Ignoring authorization header (not marked as session credential) subtype=${authHeader.subtype} value=${authHeader.value}`,
-                  )
-                }
-              }
-            },
+          .filter(
+            (headerEntry) => !alreadySeenHeaders.has(`${headerEntry.name}: ${headerEntry.value}`),
           )
+          .filter((headerEntry) => headerEntry.name === 'authorization')
+          .forEach((headerEntry) => {
+            alreadySeenHeaders.add(`${headerEntry.name}: ${headerEntry.value}`)
+            if (headerEntry.name === 'authorization') {
+              const subtype = headerEntry.value.split(' ')[0]
+              const token = headerEntry.value.slice(subtype.length + 1)
+              const authHeader = {
+                type: 'authorization',
+                subtype,
+                value: token,
+              }
+              authHeader.expiresUTC =
+                getExpirationTime(token) || getDefaultExpiresUTC(app, authHeader)
+              if (!hasSessionCredentialsDefined(app) || isSessionCredential(app, authHeader)) {
+                consoleLog(
+                  `${app.appid} ${account.userid}: saving authorization ${authHeader.subtype} ${shortenString(
+                    authHeader.value,
+                  )}`,
+                )
+                interceptedCookiesAndTokens.push(authHeader)
+              } else if (options.debug) {
+                consoleLog(
+                  `Ignoring authorization header (not marked as session credential) subtype=${authHeader.subtype} value=${authHeader.value}`,
+                )
+              }
+            }
+          })
       } catch {
         // Ignore errors thrown when context.close() is called while headersArray() is running
       }
@@ -318,7 +276,7 @@ const executeLoginSteps = async (options, app, account, playwrightFunction) => {
             setCookieHeaders.push({
               header: headerEntry.value,
               responseUrl: response.url(),
-            })
+            }),
           )
       } catch {
         // Ignore errors thrown when context.close() is called while headersArray() is running
@@ -326,20 +284,15 @@ const executeLoginSteps = async (options, app, account, playwrightFunction) => {
     })
     const getBrowserCookies = async () =>
       (await context.cookies())
-        .map((browserCookie) =>
-          cookieFromBrowser(browserCookie, setCookieHeaders)
-        )
+        .map((browserCookie) => cookieFromBrowser(browserCookie, setCookieHeaders))
         .map((cookie) => ({
           ...cookie,
           expiresUTC: cookie.expiresUTC || getDefaultExpiresUTC(app, cookie),
         }))
         .filter((cookie) => {
-          const keep = !hasSessionCredentialsDefined(app) ||
-            isSessionCredential(app, cookie)
+          const keep = !hasSessionCredentialsDefined(app) || isSessionCredential(app, cookie)
           if (!keep && options.debug) {
-            consoleLog(
-              `Ignoring cookie not marked as session credential: ${cookie.name}`,
-            )
+            consoleLog(`Ignoring cookie not marked as session credential: ${cookie.name}`)
           }
           return keep
         })
@@ -348,16 +301,13 @@ const executeLoginSteps = async (options, app, account, playwrightFunction) => {
 
     const credentials = await waitUntilFoundAllSessionCredentials(
       app,
-      async () => [
-        ...interceptedCookiesAndTokens,
-        ...await getBrowserCookies(),
-      ],
+      async () => [...interceptedCookiesAndTokens, ...(await getBrowserCookies())],
       options.debug,
     )
     interceptedCookiesAndTokens = credentials
-    credentials.filter((cred) => cred.type === 'cookie').forEach((cred) =>
-      consoleLog(`${app.appid} ${account.userid}: saving cookie: ${cred.name}`)
-    )
+    credentials
+      .filter((cred) => cred.type === 'cookie')
+      .forEach((cred) => consoleLog(`${app.appid} ${account.userid}: saving cookie: ${cred.name}`))
     if (options.debug) {
       consoleLog('All session credentials has been saved.')
     }
@@ -373,9 +323,7 @@ const executeLoginSteps = async (options, app, account, playwrightFunction) => {
 }
 
 const ensureTokensAccountEntryExists = (tokensJsonObj, app, account) => {
-  let tokensJsonAppEntry = tokensJsonObj.find((entry) =>
-    entry.appid === app.appid
-  )
+  let tokensJsonAppEntry = tokensJsonObj.find((entry) => entry.appid === app.appid)
   if (!tokensJsonAppEntry) {
     tokensJsonAppEntry = { appid: app.appid, accounts: [] }
     tokensJsonObj.push(tokensJsonAppEntry)
@@ -390,23 +338,9 @@ const ensureTokensAccountEntryExists = (tokensJsonObj, app, account) => {
   return tokensJsonAccountEntry
 }
 
-const loginWithAccountAndGetFreshCredentials = async (
-  options,
-  app,
-  account,
-  tokensJsonObj,
-) => {
-  const interceptedCookiesAndTokens = await executeLoginSteps(
-    options,
-    app,
-    account,
-    app.login,
-  )
-  const tokensJsonAccountEntry = ensureTokensAccountEntryExists(
-    tokensJsonObj,
-    app,
-    account,
-  )
+const loginWithAccountAndGetFreshCredentials = async (options, app, account, tokensJsonObj) => {
+  const interceptedCookiesAndTokens = await executeLoginSteps(options, app, account, app.login)
+  const tokensJsonAccountEntry = ensureTokensAccountEntryExists(tokensJsonObj, app, account)
   tokensJsonAccountEntry.cookiesAndTokens = interceptedCookiesAndTokens
 }
 
@@ -414,44 +348,34 @@ const isValidForAtleast15Minutes = (credential) => {
   return dayjs(credential.expiresUTC).diff(dayjs(), 'minute') >= 20
 }
 
-const allCredentialsForAccountAreFresh = (
-  app,
-  account,
-  tokensJsonObj,
-) => {
+const allCredentialsForAccountAreFresh = (app, account, tokensJsonObj) => {
   const cookiesAndTokens =
-    tokensJsonObj.find((tokenAppInfo) => tokenAppInfo.appid === app.appid)
-      ?.accounts
-      ?.find((tokenAccountEntry) => tokenAccountEntry.userid === account.userid)
+    tokensJsonObj
+      .find((tokenAppInfo) => tokenAppInfo.appid === app.appid)
+      ?.accounts?.find((tokenAccountEntry) => tokenAccountEntry.userid === account.userid)
       ?.cookiesAndTokens || []
 
   if (hasSessionCredentialsDefined(app)) {
-    return cookiesAndTokens.length !== 0 &&
-      cookiesAndTokens.filter((cookieOrToken) =>
-        isSessionCredential(app, cookieOrToken)
-      ).every(isValidForAtleast15Minutes)
+    return (
+      cookiesAndTokens.length !== 0 &&
+      cookiesAndTokens
+        .filter((cookieOrToken) => isSessionCredential(app, cookieOrToken))
+        .every(isValidForAtleast15Minutes)
+    )
   } else {
-    return cookiesAndTokens.length !== 0 &&
-      cookiesAndTokens.every(isValidForAtleast15Minutes)
+    return cookiesAndTokens.length !== 0 && cookiesAndTokens.every(isValidForAtleast15Minutes)
   }
 }
 
 const loadConfig = async () => {
   const webappsJsFilename = program.opts().config
-  const tokensJsonFilename = webappsJsFilename.replace(
-    'webapps.js',
-    'tokens.json',
-  )
-  const webappsJsonObj = (await import(
-    path.resolve(process.cwd(), webappsJsFilename)
-  )).default
+  const tokensJsonFilename = webappsJsFilename.replace('webapps.js', 'tokens.json')
+  const webappsJsonObj = (await import(path.resolve(process.cwd(), webappsJsFilename))).default
   let tokensJsonObj
   if (fs.existsSync(tokensJsonFilename)) {
     tokensJsonObj = JSON.parse(await fsPromises.readFile(tokensJsonFilename))
     if (!Array.isArray(tokensJsonObj)) {
-      throw Error(
-        `${tokensJsonFilename} must be a json file containing a list at the top level`,
-      )
+      throw Error(`${tokensJsonFilename} must be a json file containing a list at the top level`)
     }
   } else {
     tokensJsonObj = []
@@ -460,17 +384,11 @@ const loadConfig = async () => {
   return { webappsJsonObj, tokensJsonObj, tokensJsonFilename }
 }
 
-const loginWithPasswordGrantAndGetFreshCredentials = async (
-  app,
-  account,
-  tokensJsonObj,
-) => {
+const loginWithPasswordGrantAndGetFreshCredentials = async (app, account, tokensJsonObj) => {
   const existingRefreshToken = tokensJsonObj
     .find((entry) => entry.appid === app.appid)
-    ?.accounts
-    ?.find((entry) => entry.userid === account.userid)
-    ?.cookiesAndTokens
-    ?.find((cred) => cred.type === 'oauth2-refresh')
+    ?.accounts?.find((entry) => entry.userid === account.userid)
+    ?.cookiesAndTokens?.find((cred) => cred.type === 'oauth2-refresh')
   let tokenRespJson
   if (existingRefreshToken?.value) {
     try {
@@ -478,9 +396,9 @@ const loginWithPasswordGrantAndGetFreshCredentials = async (
         method: 'POST',
         headers: { 'content-type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
-          'client_id': app.clientId,
-          'grant_type': 'refresh_token',
-          'refresh_token': existingRefreshToken.value,
+          client_id: app.clientId,
+          grant_type: 'refresh_token',
+          refresh_token: existingRefreshToken.value,
         }).toString(),
       })
       tokenRespJson = await refreshResp.json()
@@ -496,11 +414,11 @@ const loginWithPasswordGrantAndGetFreshCredentials = async (
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        'client_id': app.clientId,
-        'grant_type': 'password',
-        'username': account.userid,
-        'password': account.passwd,
-        ...(app.scope ? { 'scope': app.scope } : {}),
+        client_id: app.clientId,
+        grant_type: 'password',
+        username: account.userid,
+        password: account.passwd,
+        ...(app.scope ? { scope: app.scope } : {}),
       }).toString(),
     })
     tokenRespJson = await tokenResp.json()
@@ -508,9 +426,11 @@ const loginWithPasswordGrantAndGetFreshCredentials = async (
   const accessToken = tokenRespJson.access_token
   if (!accessToken) {
     throw Error(
-      `failed to refresh credentials for ${app.appid} ${account.userid} ... tokenResponse=${
-        JSON.stringify(tokenRespJson, null, 4)
-      }`,
+      `failed to refresh credentials for ${app.appid} ${account.userid} ... tokenResponse=${JSON.stringify(
+        tokenRespJson,
+        null,
+        4,
+      )}`,
     )
   }
   const authEntry = {
@@ -518,8 +438,7 @@ const loginWithPasswordGrantAndGetFreshCredentials = async (
     subtype: 'Bearer',
     value: accessToken,
   }
-  authEntry.expiresUTC = getExpirationTime(accessToken) ||
-    getDefaultExpiresUTC(app, authEntry)
+  authEntry.expiresUTC = getExpirationTime(accessToken) || getDefaultExpiresUTC(app, authEntry)
   const cookiesAndTokens = []
   if (
     authEntry &&
@@ -529,49 +448,35 @@ const loginWithPasswordGrantAndGetFreshCredentials = async (
     cookiesAndTokens.push(authEntry)
   }
   if (
-    tokenRespJson.refresh_token && (!app?.sessionCredentials?.length ||
+    tokenRespJson.refresh_token &&
+    (!app?.sessionCredentials?.length ||
       app?.sessionCredentials?.find((entry) => entry.type === 'oauth2-refresh'))
   ) {
     cookiesAndTokens.push({
       type: 'oauth2-refresh',
       value: tokenRespJson.refresh_token,
-      expiresUTC: dayjs().add(
-        tokenRespJson.refresh_expires_in || 8 * 24 * 60 * 60,
-        'seconds',
-      ).utc().format(),
+      expiresUTC: dayjs()
+        .add(tokenRespJson.refresh_expires_in || 8 * 24 * 60 * 60, 'seconds')
+        .utc()
+        .format(),
     })
   }
-  const tokensJsonAccountEntry = ensureTokensAccountEntryExists(
-    tokensJsonObj,
-    app,
-    account,
-  )
+  const tokensJsonAccountEntry = ensureTokensAccountEntryExists(tokensJsonObj, app, account)
   tokensJsonAccountEntry.cookiesAndTokens = cookiesAndTokens
   consoleLog(
-    `${app.appid} ${account.userid}: saving authorization Bearer ${
-      shortenString(accessToken)
-    }`,
+    `${app.appid} ${account.userid}: saving authorization Bearer ${shortenString(accessToken)}`,
   )
 }
 
-const refreshCredentialsForAccount = async (
-  options,
-  app,
-  account,
-  tokensJsonObj,
-) => {
+const refreshCredentialsForAccount = async (options, app, account, tokensJsonObj) => {
   if (app.type === 'oauth2-password') {
-    return await loginWithPasswordGrantAndGetFreshCredentials(
-      app,
-      account,
-      tokensJsonObj,
-    )
+    return await loginWithPasswordGrantAndGetFreshCredentials(app, account, tokensJsonObj)
   }
   if (app.type === 'deviceflow') {
     const deviceResp = await fetch(`${app.idpBaseUrl}/device/code`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ 'client_id': app.clientId }).toString(),
+      body: new URLSearchParams({ client_id: app.clientId }).toString(),
     })
     const {
       activation_url: activationUrl,
@@ -589,9 +494,9 @@ const refreshCredentialsForAccount = async (
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
-        'device_code': deviceCode,
-        'client_id': app.clientId,
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+        device_code: deviceCode,
+        client_id: app.clientId,
       }).toString(),
     })
     const tokenRespJson = await tokenResp.json()
@@ -599,9 +504,11 @@ const refreshCredentialsForAccount = async (
 
     if (!accessToken) {
       throw Error(
-        `failed to refresh credentials for ${app.appid} ${account.userid} ... tokenResponseHttpStatus=${tokenResp.status} tokenResponse=${
-          JSON.stringify(tokenRespJson, null, 4)
-        }`,
+        `failed to refresh credentials for ${app.appid} ${account.userid} ... tokenResponseHttpStatus=${tokenResp.status} tokenResponse=${JSON.stringify(
+          tokenRespJson,
+          null,
+          4,
+        )}`,
       )
     }
 
@@ -610,47 +517,24 @@ const refreshCredentialsForAccount = async (
       subtype: 'Bearer',
       value: accessToken,
     }
-    authEntry.expiresUTC = getExpirationTime(accessToken) ||
-      getDefaultExpiresUTC(app, authEntry)
+    authEntry.expiresUTC = getExpirationTime(accessToken) || getDefaultExpiresUTC(app, authEntry)
 
-    const tokensJsonAccountEntry = ensureTokensAccountEntryExists(
-      tokensJsonObj,
-      app,
-      account,
-    )
+    const tokensJsonAccountEntry = ensureTokensAccountEntryExists(tokensJsonObj, app, account)
     tokensJsonAccountEntry.cookiesAndTokens = [authEntry]
   } else {
-    return await loginWithAccountAndGetFreshCredentials(
-      options,
-      app,
-      account,
-      tokensJsonObj,
-    )
+    return await loginWithAccountAndGetFreshCredentials(options, app, account, tokensJsonObj)
   }
 }
 
 const cmdRefresh = async (appid, userid, options) => {
   const config = await loadConfig()
-  for (
-    const { app, account } of getSelectedAppAccountPairs(config, appid, userid)
-  ) {
+  for (const { app, account } of getSelectedAppAccountPairs(config, appid, userid)) {
     if (options.debug) {
       consoleLog(`checking ${app.appid} ${account.userid}`)
     }
-    if (
-      options.force || !allCredentialsForAccountAreFresh(
-        app,
-        account,
-        config.tokensJsonObj,
-      )
-    ) {
+    if (options.force || !allCredentialsForAccountAreFresh(app, account, config.tokensJsonObj)) {
       try {
-        await refreshCredentialsForAccount(
-          options,
-          app,
-          account,
-          config.tokensJsonObj,
-        )
+        await refreshCredentialsForAccount(options, app, account, config.tokensJsonObj)
         await saveTokensJsonToDisk(config)
       } catch (err) {
         consoleError(
@@ -661,27 +545,15 @@ const cmdRefresh = async (appid, userid, options) => {
   }
 }
 
-const registerAccount = async (
-  options,
-  app,
-  account,
-) => {
-  await executeRegisterStep(
-    options,
-    account,
-    app.register,
-  )
+const registerAccount = async (options, app, account) => {
+  await executeRegisterStep(options, account, app.register)
 }
 
 const saveTokensJsonToDisk = async (config) => {
   // Reorder "tokensJsonObj" to same order used in webapps.js file
-  config.tokensJsonObj = config.webappsJsonObj.map((
-    app,
-  ) =>
-    config.tokensJsonObj.find((
-      tokenAppInfo,
-    ) => tokenAppInfo.appid === app.appid)
-  ).filter(Boolean)
+  config.tokensJsonObj = config.webappsJsonObj
+    .map((app) => config.tokensJsonObj.find((tokenAppInfo) => tokenAppInfo.appid === app.appid))
+    .filter(Boolean)
   await fsPromises.writeFile(
     config.tokensJsonFilename,
     JSON.stringify(config.tokensJsonObj, null, 4),
@@ -690,44 +562,33 @@ const saveTokensJsonToDisk = async (config) => {
 
 const cmdRegister = async (appid, userid, options) => {
   const config = await loadConfig()
-  for (
-    const { app, account } of getSelectedAppAccountPairs(config, appid, userid)
-  ) {
+  for (const { app, account } of getSelectedAppAccountPairs(config, appid, userid)) {
     consoleLog(`registering ${app.appid} ${account.userid}`)
-    await registerAccount(
-      options,
-      app,
-      account,
-    )
+    await registerAccount(options, app, account)
     consoleLog(
       `registration steps for account ${account.userid} on webapp ${app.appid} are done completed, will now verify that new userid/passwd actually works`,
     )
-    await loginWithAccountAndGetFreshCredentials(
-      options,
-      app,
-      account,
-      config.tokensJsonObj,
-    )
+    await loginWithAccountAndGetFreshCredentials(options, app, account, config.tokensJsonObj)
     await saveTokensJsonToDisk(config)
   }
 }
 
 const isMatchingSessionCredential = (sessionCredential, cookieOrToken) => {
-  const isSessionCookie = sessionCredential.type === 'cookie' &&
+  const isSessionCookie =
+    sessionCredential.type === 'cookie' &&
     cookieOrToken.type === 'cookie' &&
     cookieOrToken.name === sessionCredential.name
-  const isSessionToken = sessionCredential.type === 'authorization' &&
+  const isSessionToken =
+    sessionCredential.type === 'authorization' &&
     cookieOrToken.type === 'authorization' &&
     cookieOrToken.subtype === sessionCredential.subtype
-  const isRefreshToken = sessionCredential.type === 'oauth2-refresh' &&
-    cookieOrToken.type === 'oauth2-refresh'
+  const isRefreshToken =
+    sessionCredential.type === 'oauth2-refresh' && cookieOrToken.type === 'oauth2-refresh'
   return isSessionCookie || isSessionToken || isRefreshToken
 }
 
 const isSessionCredential = (app, cookieOrToken) =>
-  app.sessionCredentials.some((cred) =>
-    isMatchingSessionCredential(cred, cookieOrToken)
-  )
+  app.sessionCredentials.some((cred) => isMatchingSessionCredential(cred, cookieOrToken))
 
 const cmdGet = async (appid, userid, options) => {
   const config = await loadConfig()
@@ -736,42 +597,37 @@ const cmdGet = async (appid, userid, options) => {
     consoleError(`error: no such appid "${appid}"`)
     process.exit(1)
   }
-  const accountEntry = config.tokensJsonObj.find((appEntry) =>
-    appEntry.appid === appid
-  )
-    ?.accounts
-    ?.find((accountEntry) => accountEntry.userid === userid)
+  const accountEntry = config.tokensJsonObj
+    .find((appEntry) => appEntry.appid === appid)
+    ?.accounts?.find((accountEntry) => accountEntry.userid === userid)
 
   if (!accountEntry) {
     consoleError(`error: no such account with userid "${userid}"`)
     process.exit(1)
   }
 
-  const cookiesAndTokens = accountEntry
-    .cookiesAndTokens || []
+  const cookiesAndTokens = accountEntry.cookiesAndTokens || []
   let credentials
   if (app.sessionCredentials && app.sessionCredentials.length > 0) {
     credentials = cookiesAndTokens.filter((cookieOrToken) =>
-      isSessionCredential(app, cookieOrToken)
+      isSessionCredential(app, cookieOrToken),
     )
   } else {
     credentials = cookiesAndTokens
   }
-  credentials.filter((cred) =>
-    options.type === 'all' || cred.type === options.type
-  ).forEach((cred) => {
-    if (options.format === 'simple') {
-      consoleLog(cred.value)
-    }
-  })
+  credentials
+    .filter((cred) => options.type === 'all' || cred.type === options.type)
+    .forEach((cred) => {
+      if (options.format === 'simple') {
+        consoleLog(cred.value)
+      }
+    })
 }
 
 const forgetCredentials = async (config, appid, userid) => {
-  const tokenAccountObj = config.tokensJsonObj.find((appEntry) =>
-    appEntry.appid === appid
-  )
-    ?.accounts
-    ?.find((accountEntry) => accountEntry.userid === userid)
+  const tokenAccountObj = config.tokensJsonObj
+    .find((appEntry) => appEntry.appid === appid)
+    ?.accounts?.find((accountEntry) => accountEntry.userid === userid)
   if (tokenAccountObj) {
     tokenAccountObj.cookiesAndTokens = []
     await saveTokensJsonToDisk(config)
@@ -780,9 +636,7 @@ const forgetCredentials = async (config, appid, userid) => {
 
 const cmdForget = async (appid, userid) => {
   const config = await loadConfig()
-  for (
-    const { app, account } of getSelectedAppAccountPairs(config, appid, userid)
-  ) {
+  for (const { app, account } of getSelectedAppAccountPairs(config, appid, userid)) {
     await forgetCredentials(config, app.appid, account.userid)
   }
 }
@@ -795,13 +649,12 @@ const getSelectedAppAccountPairs = (config, appid, userid) => {
   }
   if (
     userid &&
-    !config.webappsJsonObj.find((app) => app.appid === appid).accounts.map(
-      (account) => account.userid,
-    ).includes(userid)
+    !config.webappsJsonObj
+      .find((app) => app.appid === appid)
+      .accounts.map((account) => account.userid)
+      .includes(userid)
   ) {
-    consoleError(
-      `error: .accounts[] for appid "${appid}" does not contain userid "${userid}"`,
-    )
+    consoleError(`error: .accounts[] for appid "${appid}" does not contain userid "${userid}"`)
     process.exit(1)
   }
   for (const app of config.webappsJsonObj) {
@@ -835,15 +688,12 @@ const getCredentialNote = (cookieOrToken) => {
 const cmdList = async (appid, userid, options) => {
   const config = await loadConfig()
   const tableRows = []
-  for (
-    const { app, account } of getSelectedAppAccountPairs(config, appid, userid)
-  ) {
-    const cookiesAndTokens = config.tokensJsonObj.find((appEntry) =>
-      appEntry.appid === app.appid
-    )
-      ?.accounts
-      ?.find((accountEntry) => accountEntry.userid === account.userid)
-      ?.cookiesAndTokens || []
+  for (const { app, account } of getSelectedAppAccountPairs(config, appid, userid)) {
+    const cookiesAndTokens =
+      config.tokensJsonObj
+        .find((appEntry) => appEntry.appid === app.appid)
+        ?.accounts?.find((accountEntry) => accountEntry.userid === account.userid)
+        ?.cookiesAndTokens || []
 
     if (cookiesAndTokens.length === 0) {
       tableRows.push({
@@ -856,9 +706,10 @@ const cmdList = async (appid, userid, options) => {
       })
     }
     cookiesAndTokens.forEach((cookieOrToken) => {
-      const credentialValue = cookieOrToken.type === 'cookie'
-        ? `${cookieOrToken.name}=${cookieOrToken.value}`
-        : (cookieOrToken.value ?? '')
+      const credentialValue =
+        cookieOrToken.type === 'cookie'
+          ? `${cookieOrToken.name}=${cookieOrToken.value}`
+          : (cookieOrToken.value ?? '')
       const maybeShortenedCredValue = options.full
         ? credentialValue
         : shortenString(credentialValue)
@@ -874,121 +725,93 @@ const cmdList = async (appid, userid, options) => {
     })
   }
 
-  const columns = [{
-    value: 'expiresUTC',
-    width: 18,
-    formatter: function (value) {
-      const localExpiration = (expiresUTC) =>
-        expiresUTC
-          ? dayjs(expiresUTC)
-            .format(
-              'YYYY-MM-DD HH:mm',
-            )
-          : ''
-      if (dayjs().isBefore(dayjs(value))) {
-        value = this.style(localExpiration(value), 'green')
-      } else {
-        value = this.style(localExpiration(value), 'red')
-      }
-      return value
+  const columns = [
+    {
+      value: 'expiresUTC',
+      width: 18,
+      formatter: function (value) {
+        const localExpiration = (expiresUTC) =>
+          expiresUTC ? dayjs(expiresUTC).format('YYYY-MM-DD HH:mm') : ''
+        if (dayjs().isBefore(dayjs(value))) {
+          value = this.style(localExpiration(value), 'green')
+        } else {
+          value = this.style(localExpiration(value), 'red')
+        }
+        return value
+      },
     },
-  }, {
-    value: 'expiresRel',
-    width: 15,
-    formatter: function (value, _columnIndex, rowIndex, _rowData, inputData) {
-      const row = inputData[rowIndex]
-      const expiresRel = row.expiresUTC
-        ? dayjs(row.expiresUTC).from(dayjs())
-        : ''
-      if (dayjs().isBefore(dayjs(row.expiresUTC))) {
-        value = this.style(expiresRel, 'green')
-      } else {
-        value = this.style(expiresRel, 'red')
-      }
-      return value
+    {
+      value: 'expiresRel',
+      width: 15,
+      formatter: function (value, _columnIndex, rowIndex, _rowData, inputData) {
+        const row = inputData[rowIndex]
+        const expiresRel = row.expiresUTC ? dayjs(row.expiresUTC).from(dayjs()) : ''
+        if (dayjs().isBefore(dayjs(row.expiresUTC))) {
+          value = this.style(expiresRel, 'green')
+        } else {
+          value = this.style(expiresRel, 'red')
+        }
+        return value
+      },
     },
-  }, {
-    value: 'appid',
-  }, {
-    value: 'userid',
-  }, {
-    value: 'type',
-  }, {
-    value: 'value',
-  }, {
-    value: 'note',
-  }]
+    {
+      value: 'appid',
+    },
+    {
+      value: 'userid',
+    },
+    {
+      value: 'type',
+    },
+    {
+      value: 'value',
+    },
+    {
+      value: 'note',
+    },
+  ]
   consoleLog(
-    Table(
-      columns,
-      tableRows,
-      { align: 'left', headerAlign: 'left', headerColor: 'cyan' },
-    ).render(),
+    Table(columns, tableRows, { align: 'left', headerAlign: 'left', headerColor: 'cyan' }).render(),
   )
 }
 
-program
-  .name('wam')
-  .option(
-    '-c, --config [configFile]',
-    'config file',
-    'webapps.js',
-  )
+program.name('wam').option('-c, --config [configFile]', 'config file', 'webapps.js')
 
 program.hook('preAction', () => {
   if (!fs.existsSync(program.opts().config)) {
-    consoleError(
-      `error: config file "${program.opts().config}" does not exist`,
-    )
+    consoleError(`error: config file "${program.opts().config}" does not exist`)
     process.exit(1)
   }
 })
 
 program
-  .command('refresh [appid] [userid]').description(
-    'ensure all accounts are created and logged in',
-  ).option(
-    '--debug',
-    'show browser while updating tokens',
-  ).option(
-    '-f, --force',
-    'refresh cookies/tokens even if they have not expired yet',
-  )
+  .command('refresh [appid] [userid]')
+  .description('ensure all accounts are created and logged in')
+  .option('--debug', 'show browser while updating tokens')
+  .option('-f, --force', 'refresh cookies/tokens even if they have not expired yet')
   .action(cmdRefresh)
 
 program
   .command('get <appid> <userid>')
   .addOption(
-    new Option(
-      '-t, --type [type]',
-      'type of session credentials to get',
-    ).default('all').choices([
-      'cookie',
-      'authorization',
-      'oauth2-refresh',
-      'all',
-    ]),
+    new Option('-t, --type [type]', 'type of session credentials to get')
+      .default('all')
+      .choices(['cookie', 'authorization', 'oauth2-refresh', 'all']),
   )
   .addOption(
-    new Option(
-      '-f, --format [format]',
-      'output format',
-    ).default('simple').choices(['simple']),
+    new Option('-f, --format [format]', 'output format').default('simple').choices(['simple']),
   )
   .action(cmdGet)
 
 program
-  .command('register [appid] [userid]').description(
+  .command('register [appid] [userid]')
+  .description(
     'register specified accounts (useful for re-creating accounts in test systems that delete all accounts periodically)',
-  ).option(
-    '--debug',
-    'show browser while registering users',
   )
+  .option('--debug', 'show browser while registering users')
   .action(cmdRegister)
 
-program
-  .command('forget [appid] [userid]')
-  .action(cmdForget)
+program.command('forget [appid] [userid]').action(cmdForget)
 
 program
   .command('list [appid] [userid]')

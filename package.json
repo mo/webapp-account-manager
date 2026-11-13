@@ -2,10 +2,6 @@
   "name": "webapp-account-manager",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@12.20.0",
-  "engines": {
-    "node": ">=26"
-  },
   "scripts": {
     "lint": "oxlint",
     "fmt": "oxfmt",
@@ -23,5 +19,9 @@
   "devDependencies": {
     "oxfmt": "^0.78.0",
     "oxlint": "^1.93.0"
-  }
+  },
+  "engines": {
+    "node": ">=26"
+  },
+  "packageManager": "pnpm@12.20.0"
 }

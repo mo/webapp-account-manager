@@ -30,15 +30,16 @@ for (const app of data) {
       continue
     }
     for (const c of creds) {
-      const kind = c.type === 'cookie'
-        ? `cookie:${c.name}`
-        : c.type === 'authorization'
-        ? `authorization:${c.subtype}`
-        : c.type
+      const kind =
+        c.type === 'cookie'
+          ? `cookie:${c.name}`
+          : c.type === 'authorization'
+            ? `authorization:${c.subtype}`
+            : c.type
       console.log(
-        `${app.appid} ${account.userid} ${kind} expires=${
-          describeExpires(c.expiresUTC)
-        } value=${describeValue(c.value)}`,
+        `${app.appid} ${account.userid} ${kind} expires=${describeExpires(
+          c.expiresUTC,
+        )} value=${describeValue(c.value)}`,
       )
     }
   }

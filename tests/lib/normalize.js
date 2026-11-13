@@ -15,9 +15,7 @@ export const describeValue = (value) => {
         .filter(([k]) => k !== 'iat' && k !== 'exp')
         .map(([k, v]) => `${k}=${Array.isArray(v) ? `[${v.join(',')}]` : v}`)
       if (claims.exp) {
-        shown.push(
-          `exp=+${Math.round((claims.exp - Date.now() / 1000) / 60)}min`,
-        )
+        shown.push(`exp=+${Math.round((claims.exp - Date.now() / 1000) / 60)}min`)
       }
       return `jwt{${shown.join(' ')}}`
     } catch {

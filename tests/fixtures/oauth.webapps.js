@@ -55,10 +55,7 @@ export default [
     type: 'oauth2-password',
     tokenUrl: `${base}/oauth/token`,
     clientId: 'wam-short-client',
-    sessionCredentials: [
-      { type: 'authorization', subtype: 'Bearer' },
-      { type: 'oauth2-refresh' },
-    ],
+    sessionCredentials: [{ type: 'authorization', subtype: 'Bearer' }, { type: 'oauth2-refresh' }],
     accounts: [{ userid: 'alice@example.com', passwd: 'alice-pw' }],
   },
   {
