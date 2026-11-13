@@ -1,0 +1,27 @@
+{
+  "name": "webapp-account-manager",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.20.0",
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "lint": "oxlint",
+    "fmt": "oxfmt",
+    "check": "oxlint --deny-warnings && oxfmt --check",
+    "test": "./run-tests"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "cookie": "^1.1.0",
+    "dayjs": "^1.11.13",
+    "jsonwebtoken": "^9.0.2",
+    "playwright": "^1.65.0",
+    "tty-table": "^4.2.3"
+  },
+  "devDependencies": {
+    "oxfmt": "^0.78.0",
+    "oxlint": "^1.93.0"
+  }
+}

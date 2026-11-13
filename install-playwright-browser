@@ -1,7 +1,7 @@
 #!/bin/bash
 # Installs the chromium build that matches the playwright version wam uses
-# (the "playwright" import in deno.json, locked in deno.lock).
+# (the "playwright" dependency in package.json, locked in pnpm-lock.yaml).
 set -e
 cd "$(dirname "$0")"
-PLAYWRIGHT=$(sed -n 's/^ *"playwright": "\(npm:playwright@[^"]*\)".*/\1/p' deno.json)
-deno run --quiet --allow-all "$PLAYWRIGHT" install chromium "$@"
+pnpm install --frozen-lockfile
+pnpm exec playwright install chromium "$@"

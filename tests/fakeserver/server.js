@@ -1,4 +1,4 @@
-// deno-lint-ignore-file no-console
+/* oxlint-disable no-console */
 // Fake webapp + identity provider used by the cram test suite.
 //
 // Zero dependencies (only node: builtins) so it runs on any recent node.

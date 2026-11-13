@@ -1,4 +1,4 @@
-// deno-lint-ignore-file no-console
+/* oxlint-disable no-console */
 // Reads "wam list" output on stdin and prints the box drawn table as one
 // line per logical row, with cells separated by " | ".
 //
@@ -12,7 +12,7 @@
 import process from 'node:process'
 import { describeValue, readStdin } from './lib/normalize.js'
 
-// deno-lint-ignore no-control-regex
+// oxlint-disable-next-line no-control-regex
 const input = (await readStdin()).replace(/\x1b\[[0-9;]*m/g, '')
 
 const rows = []
