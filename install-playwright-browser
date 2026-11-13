@@ -1,2 +1,7 @@
 #!/bin/bash
-deno run --allow-all npm:playwright install chromium
+# Installs the chromium build that matches the playwright version wam uses
+# (the "playwright" import in deno.json, locked in deno.lock).
+set -e
+cd "$(dirname "$0")"
+PLAYWRIGHT=$(sed -n 's/^ *"playwright": "\(npm:playwright@[^"]*\)".*/\1/p' deno.json)
+deno run --quiet --allow-all "$PLAYWRIGHT" install chromium "$@"
