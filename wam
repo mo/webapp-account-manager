@@ -1,3 +1,6 @@
 #!/bin/bash
 SCRIPT_DIR=$(dirname $0)
-DENO_NO_UPDATE_CHECK=1 deno run --quiet --allow-env --allow-sys --allow-net --allow-read --allow-write --allow-run $SCRIPT_DIR/src/main.js "$@"
+# --allow-all: playwright reads files like /proc/sys/fs/binfmt_misc/WSLInterop
+# that deno only allows with --allow-all. wam needed nearly all permissions
+# already, and the webapps.js config it runs is arbitrary code anyway.
+DENO_NO_UPDATE_CHECK=1 deno run --quiet --allow-all $SCRIPT_DIR/src/main.js "$@"
