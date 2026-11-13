@@ -498,9 +498,7 @@ const loginWithPasswordGrantAndGetFreshCredentials = async (
   }
   if (
     tokenRespJson.refresh_token && (!app?.sessionCredentials?.length ||
-      app?.sessionCredentials?.find((entry) =>
-        entry.type === 'oauth2-refresh"'
-      ))
+      app?.sessionCredentials?.find((entry) => entry.type === 'oauth2-refresh'))
   ) {
     cookiesAndTokens.push({
       type: 'oauth2-refresh',
