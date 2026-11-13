@@ -179,8 +179,8 @@ importers:
         specifier: ^12.1.0
         version: 12.1.0
       cookie:
-        specifier: ^1.1.0
-        version: 1.1.1
+        specifier: ^2.0.2
+        version: 2.0.2
       dayjs:
         specifier: ^1.11.13
         version: 1.11.23
@@ -523,9 +523,9 @@ packages:
     resolution: {integrity: sha512-Vw8qHK3bZM9y/P10u3Vib8o/DdkvA2OtPtZvD871QKjy74Wj1WSKFILMPRPSdUSx5RFK1arlJzEtA4PkFgnbuA==}
     engines: {node: '>=18'}
 
-  cookie@1.1.1:
-    resolution: {integrity: sha512-ei8Aos7ja0weRpFzJnEA9UHJ/7XQmqglbRwnf2ATjcB9Wq874VKH9kfjjirM6UhU2/E5fFYadylyhFldcqSidQ==}
-    engines: {node: '>=18'}
+  cookie@2.0.2:
+    resolution: {integrity: sha512-SL0cVuEdETEp7pN0FuZb01toc3vnODEfVUCooxG1SJN0yIirh7JMb9X9bvfCFf0vzzbT68RdbKDHYTiWy7a7iw==}
+    engines: {node: '>=22'}
 
   csv-generate@3.4.3:
     resolution: {integrity: sha512-w/T+rqR0vwvHqWs/1ZyMDWtHHSJaN06klRqJXBEpDJaM/+dZkso0OKh1VcuuYvK3XM53KysVNq8Ko/epCK8wOw==}
@@ -1302,7 +1302,7 @@ snapshots:
 
   commander@12.1.0: {}
 
-  cookie@1.1.1: {}
+  cookie@2.0.2: {}
 
   csv-generate@3.4.3: {}
 
