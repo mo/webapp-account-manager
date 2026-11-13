@@ -53,10 +53,13 @@ const waitUntilFoundAllSessionCredentials = (
   interceptedCookiesAndTokens,
   debug,
 ) => {
+  // Without sessionCredentials every cookie/token is saved, so there is
+  // nothing specific to wait for (every() on an empty list is true).
+  const sessionCredentials = app.sessionCredentials || []
   return new Promise((resolve) => {
     const intervalId = setInterval(() => {
       if (
-        app.sessionCredentials.every((sessionCred) =>
+        sessionCredentials.every((sessionCred) =>
           interceptedCookiesAndTokens.some((cookieOrToken) =>
             isMatchingSessionCredential(sessionCred, cookieOrToken)
           )
@@ -70,7 +73,7 @@ const waitUntilFoundAllSessionCredentials = (
       if (debug) {
         consoleLog(
           `${
-            app.sessionCredentials.map((sessionCred) =>
+            sessionCredentials.map((sessionCred) =>
               `${
                 interceptedCookiesAndTokens.some((
                     cookieOrToken,
