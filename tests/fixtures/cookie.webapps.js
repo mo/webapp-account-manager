@@ -5,7 +5,8 @@ import process from 'node:process'
 const base = process.env.FAKESERVER_URL
 
 const cookieLogin =
-  (query = '', host = base) => async (page, userid, passwd) => {
+  (query = '', host = base) =>
+  async (page, userid, passwd) => {
     await page.goto(`${host}/cookie/login${query}`)
     await page.getByLabel('Email').click()
     await page.keyboard.type(userid)

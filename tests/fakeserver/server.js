@@ -70,16 +70,20 @@ const b64url = (buf) => Buffer.from(buf).toString('base64url')
 const makeJwt = (claims) => {
   const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
   const payload = b64url(JSON.stringify(claims))
-  const sig = crypto.createHmac('sha256', JWT_SECRET)
-    .update(`${header}.${payload}`).digest('base64url')
+  const sig = crypto
+    .createHmac('sha256', JWT_SECRET)
+    .update(`${header}.${payload}`)
+    .digest('base64url')
   return `${header}.${payload}.${sig}`
 }
 
 const verifyJwt = (token) => {
   const [header, payload, sig] = (token || '').split('.')
   if (!header || !payload || !sig) return null
-  const expected = crypto.createHmac('sha256', JWT_SECRET)
-    .update(`${header}.${payload}`).digest('base64url')
+  const expected = crypto
+    .createHmac('sha256', JWT_SECRET)
+    .update(`${header}.${payload}`)
+    .digest('base64url')
   if (expected !== sig) return null
   const claims = JSON.parse(Buffer.from(payload, 'base64url').toString())
   if (claims.exp && claims.exp < Date.now() / 1000) return null
@@ -118,8 +122,7 @@ const send = (res, status, body, headers = {}) => {
 const page = (title, body) =>
   `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head><body><h1>${title}</h1>${body}</body></html>`
 
-const escapeHtml = (s) =>
-  String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
 const loginForm = (action, extraFields = '', submitLabel = 'Log in') => `
   <form method="post" action="${escapeHtml(action)}">
@@ -129,8 +132,7 @@ const loginForm = (action, extraFields = '', submitLabel = 'Log in') => `
     <input type="submit" value="${escapeHtml(submitLabel)}">
   </form>`
 
-const checkPassword = (userid, passwd) =>
-  accounts.has(userid) && accounts.get(userid) === passwd
+const checkPassword = (userid, passwd) => accounts.has(userid) && accounts.get(userid) === passwd
 
 // ---------------------------------------------------------------- /cookie/*
 
@@ -154,37 +156,23 @@ const sessionCookieHeader = (query, prefix = '') => {
 const cookieRoutes = async (req, res, url) => {
   const qs = url.search
   if (url.pathname === '/cookie/login' && req.method === 'GET') {
-    return send(
-      res,
-      200,
-      page('Cookie app login', loginForm(`/cookie/login${qs}`)),
-      {
-        'set-cookie': [
-          // A non-session cookie that is set before login has happened
-          'Tracking=t-123; Path=/; Max-Age=31536000',
-          ...(url.searchParams.get('clearfirst') === '1'
-            ? [CLEAR_SESSION]
-            : []),
-        ],
-      },
-    )
+    return send(res, 200, page('Cookie app login', loginForm(`/cookie/login${qs}`)), {
+      'set-cookie': [
+        // A non-session cookie that is set before login has happened
+        'Tracking=t-123; Path=/; Max-Age=31536000',
+        ...(url.searchParams.get('clearfirst') === '1' ? [CLEAR_SESSION] : []),
+      ],
+    })
   }
   if (url.pathname === '/cookie/login' && req.method === 'POST') {
     const { email, password } = await parseBody(req)
     bump(`cookie-login:${email}`)
     if (!checkPassword(email, password)) {
       bump(`cookie-login-failed:${email}`)
-      return send(
-        res,
-        401,
-        page('Invalid login', '<p>Bad email or password</p>'),
-      )
+      return send(res, 401, page('Invalid login', '<p>Bad email or password</p>'))
     }
     const q = url.searchParams
-    const sessionHeader = sessionCookieHeader(
-      q,
-      q.get('aba') === '1' ? 'a-' : '',
-    )
+    const sessionHeader = sessionCookieHeader(q, q.get('aba') === '1' ? 'a-' : '')
     let location = '/cookie/home'
     if (q.get('aba') === '1') {
       location = `/cookie/aba-b?h=${encodeURIComponent(sessionHeader)}`
@@ -232,9 +220,9 @@ const cookieRoutes = async (req, res, url) => {
       headers = { 'set-cookie': 'SessionId=; Path=/legacy; Max-Age=0' }
     } else if (url.searchParams.get('twopaths')) {
       headers = {
-        'set-cookie': `SessionId=${
-          url.searchParams.get('twopaths')
-        }; Path=/legacy; HttpOnly; Max-Age=7200`,
+        'set-cookie': `SessionId=${url.searchParams.get(
+          'twopaths',
+        )}; Path=/legacy; HttpOnly; Max-Age=7200`,
       }
     } else if (url.searchParams.get('otherdomain') === '1') {
       headers = {
@@ -261,11 +249,7 @@ const cookieRoutes = async (req, res, url) => {
     const { email, password } = await parseBody(req)
     bump(`register:${email}`)
     if (!email || !password) {
-      return send(
-        res,
-        400,
-        page('Registration failed', '<p>missing fields</p>'),
-      )
+      return send(res, 400, page('Registration failed', '<p>missing fields</p>'))
     }
     accounts.set(email, password)
     return send(res, 200, page('Registration complete', '<p>Welcome!</p>'))
@@ -395,9 +379,7 @@ const oauthRoutes = async (req, res, url, baseUrl) => {
         'Activate device',
         loginForm(
           '/oauth/activate',
-          `<label for="code">Code</label><input id="code" name="code" value="${
-            escapeHtml(code)
-          }">`,
+          `<label for="code">Code</label><input id="code" name="code" value="${escapeHtml(code)}">`,
           'Approve',
         ),
       ),
@@ -407,22 +389,14 @@ const oauthRoutes = async (req, res, url, baseUrl) => {
     const { code, email, password } = await parseBody(req)
     bump(`device-activate:${email}`)
     if (!checkPassword(email, password)) {
-      return send(
-        res,
-        401,
-        page('Invalid login', '<p>Bad email or password</p>'),
-      )
+      return send(res, 401, page('Invalid login', '<p>Bad email or password</p>'))
     }
     const entry = [...deviceCodes.values()].find((dc) => dc.userCode === code)
     if (!entry) {
       return send(res, 400, page('Unknown code', '<p>No such code</p>'))
     }
     entry.approvedFor = email
-    return send(
-      res,
-      200,
-      page('Device approved', '<p>You can close this window</p>'),
-    )
+    return send(res, 200, page('Device approved', '<p>You can close this window</p>'))
   }
   if (url.pathname === '/oauth/token' && req.method === 'POST') {
     const body = await parseBody(req)
@@ -434,12 +408,7 @@ const oauthRoutes = async (req, res, url, baseUrl) => {
     if (body.grant_type === 'password') {
       bump(`token:password:${body.username}`)
       if (!checkPassword(body.username, body.password)) {
-        return oauthError(
-          res,
-          'invalid_grant',
-          'Invalid user credentials',
-          401,
-        )
+        return oauthError(res, 'invalid_grant', 'Invalid user credentials', 401)
       }
       return send(res, 200, issueTokens(clientId, body.username, body.scope))
     }
@@ -496,7 +465,8 @@ const server = http.createServer(async (req, res) => {
   const baseUrl = `http://${req.headers.host}`
   const url = new URL(req.url, baseUrl)
   try {
-    const handled = controlRoutes(req, res, url) ??
+    const handled =
+      controlRoutes(req, res, url) ??
       (await cookieRoutes(req, res, url)) ??
       (await spaRoutes(req, res, url)) ??
       (await oauthRoutes(req, res, url, baseUrl))

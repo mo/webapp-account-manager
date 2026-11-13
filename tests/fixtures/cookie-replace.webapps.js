@@ -5,7 +5,8 @@ import process from 'node:process'
 const base = process.env.FAKESERVER_URL
 
 const cookieLogin =
-  (query = '', host = base) => async (page, userid, passwd) => {
+  (query = '', host = base) =>
+  async (page, userid, passwd) => {
     await page.goto(`${host}/cookie/login${query}`)
     await page.getByLabel('Email').click()
     await page.keyboard.type(userid)
@@ -39,10 +40,7 @@ export default [
     sessionCredentials: [{ type: 'cookie', name: 'SessionId' }],
     // Domain= is meaningless for an IP address, so use a hostname (Chromium
     // resolves *.localhost to the loopback address)
-    login: cookieLogin(
-      '?otherdomain=1',
-      base.replace('127.0.0.1', 'wam.localhost'),
-    ),
+    login: cookieLogin('?otherdomain=1', base.replace('127.0.0.1', 'wam.localhost')),
   },
   {
     // Same SessionId value at Path=/ (1h) and Path=/legacy (2h)

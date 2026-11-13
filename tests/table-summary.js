@@ -45,13 +45,8 @@ for (const line of input.split('\n')) {
 flush()
 
 const normalizeCell = (text) => {
-  let t = process.env.KEEP_DATES
-    ? text
-    : text.replace(/\d{4}-\d\d-\d\d \d\d:\d\d/g, '<date>')
-  if (
-    /^ey[\w-]+\.[\w-]+\.[\w-]+$/.test(t) ||
-    /^\w+=ey[\w-]+\.[\w-]+\.[\w-]+$/.test(t)
-  ) {
+  let t = process.env.KEEP_DATES ? text : text.replace(/\d{4}-\d\d-\d\d \d\d:\d\d/g, '<date>')
+  if (/^ey[\w-]+\.[\w-]+\.[\w-]+$/.test(t) || /^\w+=ey[\w-]+\.[\w-]+\.[\w-]+$/.test(t)) {
     const [prefix, jwt] = t.includes('=')
       ? [t.split('=')[0] + '=', t.slice(t.indexOf('=') + 1)]
       : ['', t]
