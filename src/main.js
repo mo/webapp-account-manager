@@ -2,6 +2,8 @@ import process from 'node:process'
 import fs from 'node:fs'
 import fsPromises from 'node:fs/promises'
 import path from 'node:path'
+import { registerHooks } from 'node:module'
+import { pathToFileURL } from 'node:url'
 import { Option, program } from 'commander'
 import playwright from 'playwright'
 import cookie from 'cookie'
@@ -367,10 +369,54 @@ const allCredentialsForAccountAreFresh = (app, account, tokensJsonObj) => {
   }
 }
 
+// Import the webapps.js config the way deno did: as an ES module even if the
+// nearest package.json says "type": "commonjs" (or has no "type" and node's
+// syntax detection would guess wrong), together with the local .js files it
+// imports (directly or via other local modules). Bare imports such as
+// 'dayjs' that the config's own project can't resolve fall back to wam's
+// dependencies (deno.json used to provide those). Node resolves symlinks
+// before loading, so start from the real path.
+const importConfig = (filename) => {
+  const url = pathToFileURL(fs.realpathSync(filename)).href
+  const configGraph = new Set([url])
+  const isBareSpecifier = (specifier) => !/^(\.|\/|[a-z][a-z0-9+.-]*:)/i.test(specifier)
+  const isLocalFile = (fileUrl) =>
+    fileUrl.startsWith('file:') && !fileUrl.includes('/node_modules/')
+  registerHooks({
+    resolve(specifier, context, nextResolve) {
+      if (!configGraph.has(context.parentURL)) {
+        return nextResolve(specifier, context)
+      }
+      let resolved
+      try {
+        resolved = nextResolve(specifier, context)
+      } catch (err) {
+        if (err.code !== 'ERR_MODULE_NOT_FOUND' || !isBareSpecifier(specifier)) {
+          throw err
+        }
+        resolved = nextResolve(specifier, { ...context, parentURL: import.meta.url })
+      }
+      // Only follow import edges, files reached through require() stay CommonJS
+      if (isLocalFile(resolved.url) && !context.conditions?.includes('require')) {
+        configGraph.add(resolved.url)
+      }
+      return resolved
+    },
+    load(loadUrl, context, nextLoad) {
+      if (configGraph.has(loadUrl) && new URL(loadUrl).pathname.endsWith('.js')) {
+        return { ...nextLoad(loadUrl, { ...context, format: 'module' }), format: 'module' }
+      }
+      return nextLoad(loadUrl, context)
+    },
+  })
+  return import(url)
+}
+
 const loadConfig = async () => {
   const webappsJsFilename = program.opts().config
   const tokensJsonFilename = webappsJsFilename.replace('webapps.js', 'tokens.json')
-  const webappsJsonObj = (await import(path.resolve(process.cwd(), webappsJsFilename))).default
+  const webappsJsonObj = (await importConfig(path.resolve(process.cwd(), webappsJsFilename)))
+    .default
   let tokensJsonObj
   if (fs.existsSync(tokensJsonFilename)) {
     tokensJsonObj = JSON.parse(await fsPromises.readFile(tokensJsonFilename))

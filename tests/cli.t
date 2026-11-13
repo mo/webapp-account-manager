@@ -120,3 +120,27 @@ The tokens file (derived from the config file name) must contain a list:
   [1]
   $ grep -o 'cookie.tokens.json must be a json file containing a list at the top level' out.txt
   cookie.tokens.json must be a json file containing a list at the top level
+
+A webapps.js config, and the local .js files it imports (also via .mjs
+files and with query strings), are loaded as ES modules even inside a
+project whose package.json says "type": "commonjs", also when the config is
+a symlink. Files loaded with require() stay CommonJS. Bare imports fall
+back to wam's own dependencies:
+
+  $ mkdir cjs-project && cd cjs-project
+  $ echo '{ "type": "commonjs" }' > package.json
+  $ echo "export const name = 'esm'" > name.js
+  $ echo "export const suffix = '-app'" > suffix.js
+  $ echo "export { suffix } from './suffix.js'" > bridge.mjs
+  $ echo "import { name } from './name.js?variant=1'; import { suffix } from './bridge.mjs'; export const appid = name + suffix" > helper.js
+  $ echo "module.exports = { userid: 'u@example.com' }" > user.js
+  $ echo "module.exports = require('./user.js')" > user.cjs
+  $ printf "import dayjs from 'dayjs'\nimport { appid } from './helper.js'\nimport user from './user.cjs'\nexport default [{ appid: appid + dayjs.utc(0).year(), accounts: [{ userid: user.userid, passwd: 'pw' }] }]\n" > esm.webapps.js
+  $ wamlist -c esm.webapps.js list
+  expiresUTC | expiresRel | appid | userid | type | value | note
+   |  | esm-app1970 | u@example.com |  |  |
+  $ cd ..
+  $ ln -s cjs-project/esm.webapps.js linked.webapps.js
+  $ wamlist -c linked.webapps.js list
+  expiresUTC | expiresRel | appid | userid | type | value | note
+   |  | esm-app1970 | u@example.com |  |  |
