@@ -1,0 +1,96 @@
+#!/bin/bash
+# Run the cram test suite (tests/*.t) against ./wam.
+#
+#   ./run-tests                  # run all tests, test files in parallel
+#   ./run-tests tests/list.t     # run some tests
+#   ./run-tests -i tests/list.t  # interactively accept changed output
+#
+# Test files are independent (each starts its own fakeserver on a random
+# port and runs in its own temp dir), so they run in parallel, JOBS at a time
+# (default: number of CPUs). -i/--interactive and -d/--debug need the
+# terminal and run serially.
+#
+# Set WAM_BIN=/path/to/wam to test another wam executable.
+# Needs node (for the fakeserver), uvx (for cram) and a playwright chromium.
+set -e
+cd "$(dirname "$0")"
+SELF="$(pwd)/$(basename "$0")"
+
+run_cram() {
+  uvx cram --shell=/bin/bash "$@"
+}
+
+if [ "$1" = "--run-one" ]; then
+  # Internal: run one test file for the parallel runner (called via xargs)
+  file=$2
+  out="$RUN_TESTS_OUTDIR/$(echo "$file" | tr / _)"
+  start=$(date +%s)
+  # shellcheck disable=SC2086 # options are intentionally word split
+  if run_cram $RUN_TESTS_OPTS "$file" >"$out.out" 2>&1; then
+    echo "  ok    $file ($(($(date +%s) - start))s)"
+  else
+    echo "  FAIL  $file ($(($(date +%s) - start))s)"
+    touch "$out.failed"
+  fi
+  exit 0
+fi
+
+opts=()
+paths=()
+serial=
+for arg in "$@"; do
+  case "$arg" in
+    -i | --interactive | -d | --debug)
+      serial=1
+      opts+=("$arg")
+      ;;
+    -*) opts+=("$arg") ;;
+    *) paths+=("$arg") ;;
+  esac
+done
+if [ ${#paths[@]} -eq 0 ]; then
+  paths=(tests)
+fi
+
+files=()
+for p in "${paths[@]}"; do
+  if [ -d "$p" ]; then
+    for f in $(find "$p" -name '*.t' | sort); do
+      files+=("$f")
+    done
+  else
+    files+=("$p")
+  fi
+done
+
+if [ -n "$serial" ] || [ ${#files[@]} -le 1 ]; then
+  exec uvx cram --shell=/bin/bash "${opts[@]}" "${files[@]}"
+fi
+
+if [ -z "$JOBS" ]; then
+  JOBS=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
+fi
+
+RUN_TESTS_OUTDIR=$(mktemp -d "${TMPDIR:-/tmp}/run-tests.XXXXXX")
+trap 'rm -rf "$RUN_TESTS_OUTDIR"' EXIT
+export RUN_TESTS_OUTDIR
+export RUN_TESTS_OPTS="${opts[*]}"
+
+echo "Running ${#files[@]} test files, $JOBS in parallel"
+start=$(date +%s)
+printf '%s\n' "${files[@]}" | xargs -P "$JOBS" -n 1 "$SELF" --run-one
+
+failed=0
+for f in "${files[@]}"; do
+  out="$RUN_TESTS_OUTDIR/$(echo "$f" | tr / _)"
+  if [ -e "$out.failed" ]; then
+    failed=$((failed + 1))
+    echo
+    echo "=== $f"
+    cat "$out.out"
+  fi
+done
+
+echo
+echo "# Ran ${#files[@]} test files in $(($(date +%s) - start))s, $failed failed."
+[ "$failed" -eq 0 ]

@@ -7,3 +7,9 @@ example.tokens.json
 
 *.webapps.js
 *.tokens.json
+
+# Test fixtures are committed
+!tests/fixtures/*.webapps.js
+
+# cram output of failing tests
+/tests/*.t.err
