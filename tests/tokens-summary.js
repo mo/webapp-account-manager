@@ -1,4 +1,4 @@
-// deno-lint-ignore-file no-console
+/* oxlint-disable no-console */
 // Prints a *.tokens.json file in a stable, human readable form so cram tests
 // can assert on it even though tokens/cookies are random and expiry times are
 // relative to "now".

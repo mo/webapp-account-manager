@@ -1,10 +1,10 @@
 const consoleLog = (...args) => {
-  // deno-lint-ignore no-console
+  // oxlint-disable-next-line no-console
   console.log(...args)
 }
 
 const consoleError = (...args) => {
-  // deno-lint-ignore no-console
+  // oxlint-disable-next-line no-console
   console.error(...args)
 }
 

@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "env": {
+    "node": true,
+    "es2024": true
+  },
+  "rules": {
+    "no-console": "error",
+    "no-undef": "error"
+  },
+  "overrides": [
+    {
+      "files": ["tests/fakeserver/**"],
+      "env": { "browser": true }
+    }
+  ]
+}

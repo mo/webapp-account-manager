@@ -3,13 +3,14 @@
 End-to-end [cram](https://bitheap.org/cram/) tests that run the real `wam`
 executable against a local fake webapp / identity provider.
 
+    pnpm test                      # same as ./run-tests
     ./run-tests                    # all tests, files in parallel (~25s)
     ./run-tests tests/list.t       # a single file
     ./run-tests -i tests/list.t    # interactively accept changed output
     WAM_BIN=/path/to/wam ./run-tests   # test another wam implementation
     JOBS=1 ./run-tests             # run the test files one at a time
 
-Requirements: `node` (fakeserver + helper scripts), `uvx` (runs cram) and a
+Requirements: `node` and `pnpm` (wam, fakeserver + helper scripts), `uvx` (runs cram) and a
 playwright chromium for the browser based logins
 (`./install-playwright-browser`).
 

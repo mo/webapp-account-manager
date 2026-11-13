@@ -1,6 +1,12 @@
 #!/bin/bash
-SCRIPT_DIR=$(dirname $0)
-# --allow-all: playwright reads files like /proc/sys/fs/binfmt_misc/WSLInterop
-# that deno only allows with --allow-all. wam needed nearly all permissions
-# already, and the webapps.js config it runs is arbitrary code anyway.
-DENO_NO_UPDATE_CHECK=1 deno run --quiet --allow-all $SCRIPT_DIR/src/main.js "$@"
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+# Install the dependencies on first run and whenever pnpm-lock.yaml changed
+# (e.g. after a git pull). The stamp file is touched after every successful
+# install (pnpm leaves node_modules alone when nothing changed). pnpm output
+# goes to stderr so that it doesn't end up in the output of e.g. "wam get".
+STAMP="$SCRIPT_DIR/node_modules/.wam-installed"
+if [ ! -e "$STAMP" ] || [ "$SCRIPT_DIR/pnpm-lock.yaml" -nt "$STAMP" ]; then
+  (cd "$SCRIPT_DIR" && pnpm install --frozen-lockfile --silent) >&2 || exit 1
+  touch "$STAMP"
+fi
+exec node "$SCRIPT_DIR/src/main.js" "$@"

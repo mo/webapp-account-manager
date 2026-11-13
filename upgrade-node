@@ -1,0 +1,11 @@
+#!/bin/bash
+# Bump node and pnpm in mise.toml to their latest versions, and update the
+# pnpm version pinned in package.json and pnpm-lock.yaml to match
+set -e
+cd "$(dirname "$0")"
+mise upgrade node pnpm --bump
+# Read the version from mise, "pnpm --version" would switch to (and print)
+# the version pinned in package.json's packageManager field
+PNPM_VERSION=$(mise current pnpm)
+perl -pi -e "s/\"packageManager\": \"pnpm\@[^\"]*\"/\"packageManager\": \"pnpm\@$PNPM_VERSION\"/" package.json
+pnpm install

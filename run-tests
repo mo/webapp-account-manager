@@ -11,7 +11,7 @@
 # terminal and run serially.
 #
 # Set WAM_BIN=/path/to/wam to test another wam executable.
-# Needs node (for the fakeserver), uvx (for cram) and a playwright chromium.
+# Needs node + pnpm (for wam and the fakeserver), uvx (for cram) and a playwright chromium.
 set -e
 cd "$(dirname "$0")"
 SELF="$(pwd)/$(basename "$0")"

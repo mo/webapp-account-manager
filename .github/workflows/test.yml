@@ -21,28 +21,26 @@ jobs:
         with:
           persist-credentials: false
 
-      # deno, at the version from mise.toml
+      # node and pnpm, at the versions from mise.toml
       - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
-
-      # node runs the fakeserver and the test helper scripts
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: lts/*
 
       # uvx runs cram
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Lint
-        run: deno lint
+        run: pnpm exec oxlint --deny-warnings
 
       - name: Check formatting
-        run: deno fmt --check
+        run: pnpm exec oxfmt --check
 
-      # The chromium build for the playwright version in deno.json/deno.lock,
+      # The chromium build for the playwright version in pnpm-lock.yaml,
       # plus the system libraries it needs
       - name: Install playwright chromium
         timeout-minutes: 10
         run: ./install-playwright-browser --with-deps
 
       - name: Run tests
-        run: ./run-tests
+        run: pnpm test
