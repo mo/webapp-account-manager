@@ -11,22 +11,55 @@ import Table from 'tty-table'
 import dayjs from './dayjs.js'
 import { consoleError, consoleLog } from './console.js'
 
-const parseCookie = (setCookieValue) => {
-  const cookieParts = setCookieValue.split(';')
-  const cookieName = cookieParts[0].split('=')[0]
-  const parsedCookie = cookie.parse(setCookieValue)
-  let expiresUTC
-  if (parsedCookie.maxAge) {
-    expiresUTC = dayjs().add(parsedCookie.maxAge, 'seconds')
-  } else if (parsedCookie.expires) {
-    expiresUTC = dayjs(parsedCookie.expires)
+// Does a Set-Cookie header (received in a response from responseUrl) set
+// this browser cookie? Compares name, value, domain (playwright prefixes
+// Domain cookies with "." and leaves host-only cookies without it) and path
+// (defaulting to the directory of the response URL, RFC 6265 section 5.1.4).
+const setCookieHeaderMatches = (
+  browserCookie,
+  { header, responseUrl },
+  matchScope,
+) => {
+  const parsed = cookie.parseSetCookie(header, { decode: (v) => v })
+  if (
+    parsed.name !== browserCookie.name || parsed.value !== browserCookie.value
+  ) {
+    return false
   }
+  if (!matchScope) {
+    return true
+  }
+  const url = new URL(responseUrl)
+  const domain = parsed.domain
+    ? '.' + parsed.domain.toLowerCase().replace(/^\./, '')
+    : url.hostname
+  let path = parsed.path
+  if (!path || !path.startsWith('/')) {
+    const lastSlash = url.pathname.lastIndexOf('/')
+    path = lastSlash > 0 ? url.pathname.slice(0, lastSlash) : '/'
+  }
+  return domain === browserCookie.domain && path === browserCookie.path
+}
+
+// Convert a cookie from the browser's cookie store (playwright
+// BrowserContext.cookies()) to a tokens.json entry. "raw" is the last
+// Set-Cookie header that set this cookie, if one was seen. If no header
+// matches the cookie's exact domain/path (e.g. Chromium stores Domain= on an
+// IP address as host-only) fall back to matching on name and value only.
+const cookieFromBrowser = (browserCookie, setCookieHeaders) => {
+  const findHeader = (matchScope) =>
+    setCookieHeaders.findLast((entry) =>
+      setCookieHeaderMatches(browserCookie, entry, matchScope)
+    )?.header
   return {
     type: 'cookie',
-    name: cookieName,
-    value: parsedCookie[cookieName],
-    expiresUTC: expiresUTC ? expiresUTC.utc().format() : undefined,
-    raw: setCookieValue,
+    name: browserCookie.name,
+    value: browserCookie.value,
+    // expires is -1 for browser session cookies
+    expiresUTC: browserCookie.expires > 0
+      ? dayjs.unix(browserCookie.expires).utc().format()
+      : undefined,
+    raw: findHeader(true) ?? findHeader(false),
   }
 }
 
@@ -48,50 +81,40 @@ const getExpirationTime = (token) => {
   return undefined
 }
 
-const waitUntilFoundAllSessionCredentials = (
+// Polls getCredentials() until every sessionCredential has been found and
+// returns the credentials from the last poll.
+const waitUntilFoundAllSessionCredentials = async (
   app,
-  interceptedCookiesAndTokens,
+  getCredentials,
   debug,
 ) => {
   // Without sessionCredentials every cookie/token is saved, so there is
   // nothing specific to wait for (every() on an empty list is true).
   const sessionCredentials = app.sessionCredentials || []
-  return new Promise((resolve) => {
-    const intervalId = setInterval(() => {
-      if (
-        sessionCredentials.every((sessionCred) =>
-          interceptedCookiesAndTokens.some((cookieOrToken) =>
-            isMatchingSessionCredential(sessionCred, cookieOrToken)
-          )
-        )
-      ) {
-        clearInterval(intervalId)
-        resolve()
-      } else if (debug) {
+  while (true) {
+    await new Promise((resolve) => setTimeout(resolve, 1250))
+    const credentials = await getCredentials()
+    const isFound = (sessionCred) =>
+      credentials.some((cookieOrToken) =>
+        isMatchingSessionCredential(sessionCred, cookieOrToken)
+      )
+    const allFound = sessionCredentials.every(isFound)
+    if (debug) {
+      if (!allFound) {
         consoleLog(`Still havn't found, what i'm looking for:`)
       }
-      if (debug) {
-        consoleLog(
+      consoleLog(
+        sessionCredentials.map((sessionCred) =>
           `${
-            sessionCredentials.map((sessionCred) =>
-              `${
-                interceptedCookiesAndTokens.some((
-                    cookieOrToken,
-                  ) =>
-                    isMatchingSessionCredential(
-                      sessionCred,
-                      cookieOrToken,
-                    )
-                  )
-                  ? '✅ Found        '
-                  : '❓ Not Found Yet'
-              } ---> ${JSON.stringify(sessionCred)}`
-            ).join('\n') + '\n\n'
-          }`,
-        )
-      }
-    }, 1250)
-  })
+            isFound(sessionCred) ? '✅ Found        ' : '❓ Not Found Yet'
+          } ---> ${JSON.stringify(sessionCred)}`
+        ).join('\n') + '\n\n',
+      )
+    }
+    if (allFound) {
+      return credentials
+    }
+  }
 }
 
 const hasSessionCredentialsDefined = (app) =>
@@ -223,7 +246,8 @@ const executeDeviceflowLoginSteps = async (
 }
 
 const executeLoginSteps = async (options, app, account, playwrightFunction) => {
-  const interceptedCookiesAndTokens = []
+  // Authorization headers seen in requests (cookies are added at the end)
+  let interceptedCookiesAndTokens = []
   let browser, context
   try {
     const pwObjs = await startPlaywrightChromium(
@@ -281,50 +305,58 @@ const executeLoginSteps = async (options, app, account, playwrightFunction) => {
         // Ignore errors thrown when context.close() is called while headersArray() is running
       }
     })
+    // Cookies are read from the browser's cookie store, which already
+    // applies Set-Cookie headers in order, handles deletions and keeps
+    // cookies with the same name but different domain/path apart. The raw
+    // Set-Cookie headers are only recorded for the "raw" field.
+    const setCookieHeaders = []
     page.on('response', async (response) => {
       try {
         ;(await response.headersArray())
-          .filter((headerEntry) =>
-            !alreadySeenHeaders.has(
-              `${headerEntry.name}: ${headerEntry.value}`,
-            )
-          )
           .filter((headerEntry) => headerEntry.name === 'set-cookie')
-          .forEach(
-            (headerEntry) => {
-              alreadySeenHeaders.add(
-                `${headerEntry.name}: ${headerEntry.value}`,
-              )
-              const cookie = parseCookie(headerEntry.value)
-              if (!cookie.expiresUTC) {
-                cookie.expiresUTC = getDefaultExpiresUTC(app, cookie)
-              }
-              if (
-                !hasSessionCredentialsDefined(app) ||
-                isSessionCredential(app, cookie)
-              ) {
-                consoleLog(
-                  `${app.appid} ${account.userid}: saving cookie: ${cookie.name}`,
-                )
-                interceptedCookiesAndTokens.push(cookie)
-              } else if (options.debug) {
-                consoleLog(
-                  `Ignoring cookie not marked as session credential: ${cookie.name}`,
-                )
-              }
-            },
+          .forEach((headerEntry) =>
+            setCookieHeaders.push({
+              header: headerEntry.value,
+              responseUrl: response.url(),
+            })
           )
       } catch {
         // Ignore errors thrown when context.close() is called while headersArray() is running
       }
     })
+    const getBrowserCookies = async () =>
+      (await context.cookies())
+        .map((browserCookie) =>
+          cookieFromBrowser(browserCookie, setCookieHeaders)
+        )
+        .map((cookie) => ({
+          ...cookie,
+          expiresUTC: cookie.expiresUTC || getDefaultExpiresUTC(app, cookie),
+        }))
+        .filter((cookie) => {
+          const keep = !hasSessionCredentialsDefined(app) ||
+            isSessionCredential(app, cookie)
+          if (!keep && options.debug) {
+            consoleLog(
+              `Ignoring cookie not marked as session credential: ${cookie.name}`,
+            )
+          }
+          return keep
+        })
 
     await playwrightFunction(page, account.userid, account.passwd)
 
-    await waitUntilFoundAllSessionCredentials(
+    const credentials = await waitUntilFoundAllSessionCredentials(
       app,
-      interceptedCookiesAndTokens,
+      async () => [
+        ...interceptedCookiesAndTokens,
+        ...await getBrowserCookies(),
+      ],
       options.debug,
+    )
+    interceptedCookiesAndTokens = credentials
+    credentials.filter((cred) => cred.type === 'cookie').forEach((cred) =>
+      consoleLog(`${app.appid} ${account.userid}: saving cookie: ${cred.name}`)
     )
     if (options.debug) {
       consoleLog('All session credentials has been saved.')
