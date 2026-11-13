@@ -76,7 +76,7 @@ const getExpirationTime = (token) => {
   // Note: "exp" claim is optional:
   // https://www.rfc-editor.org/rfc/rfc7519.html#section-4.1.4
   if (decodedJwt && decodedJwt.exp) {
-    return dayjs.unix(decodedJwt.exp)
+    return dayjs.unix(decodedJwt.exp).utc().format()
   }
   return undefined
 }
