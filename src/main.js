@@ -6,7 +6,7 @@ import { registerHooks } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { Option, program } from 'commander'
 import playwright from 'playwright'
-import cookie from 'cookie'
+import { parseSetCookie } from 'cookie'
 import jwt from 'jsonwebtoken'
 import Table from 'tty-table'
 
@@ -18,7 +18,7 @@ import { consoleError, consoleLog } from './console.js'
 // Domain cookies with "." and leaves host-only cookies without it) and path
 // (defaulting to the directory of the response URL, RFC 6265 section 5.1.4).
 const setCookieHeaderMatches = (browserCookie, { header, responseUrl }, matchScope) => {
-  const parsed = cookie.parseSetCookie(header, { decode: (v) => v })
+  const parsed = parseSetCookie(header, { decode: (v) => v })
   if (parsed.name !== browserCookie.name || parsed.value !== browserCookie.value) {
     return false
   }
