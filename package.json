@@ -9,7 +9,7 @@
     "test": "./run-tests"
   },
   "dependencies": {
-    "commander": "^12.1.0",
+    "commander": "^15.1.0",
     "cookie": "^2.0.2",
     "dayjs": "^1.11.13",
     "jsonwebtoken": "^9.0.2",

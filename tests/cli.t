@@ -17,8 +17,8 @@ Help output:
                                          logged in
     get [options] <appid> <userid>
     register [options] [appid] [userid]  register specified accounts (useful for
-                                         re-creating accounts in test systems
-                                         that delete all accounts periodically)
+                                         re-creating accounts in test systems that
+                                         delete all accounts periodically)
     forget [appid] [userid]
     list [options] [appid] [userid]
     help [command]                       display help for command
